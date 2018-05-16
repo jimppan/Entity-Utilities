@@ -14,7 +14,7 @@
 #define EU_PREFIX_CONSOLE "[EU]"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.0"
+#define PLUGIN_VERSION "1.11"
 
 #include <sourcemod>
 #include <sdktools>
@@ -49,7 +49,7 @@ ConVar g_PrintPreciseVectors;
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.1",
+	name = "Entity Utilities v1.11",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -1058,12 +1058,13 @@ public void OnGameFrame()
 			int entity = GetWatchedProp(client, arrIndex, prop, sizeof(prop), send, data, propType, size, element, replySource);
 			if(!IsValidEntity(entity))
 			{
-				for (int j = ENTITY_MAX - 1; j > 0; j--)
+				for (int j = ENTITY_MAX - 2; j >= 0; j--)
 					g_hWatchedProps[client].Erase(arrIndex * (ENTITY_MAX - 1) + j);
 					
 				g_hWatchedPropStrings[client].Erase(arrIndex+2);
 				g_hWatchedPropStrings[client].Erase(arrIndex+1);
 				g_hWatchedPropStrings[client].Erase(arrIndex);
+				continue;
 			}
 			
 			if(send)
