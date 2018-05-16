@@ -1,13 +1,14 @@
 #pragma semicolon 1
 
-#define DEBUG
-
 #define EU_MAX_ENT 64
 #define EU_PROP_INVALID -1
 #define EU_PROP_SEND 0
 #define EU_PROP_DATA 1
 #define EU_INVALID_PROP_SEND_OFFSET -1
 #define EU_INVALID_PROP_DATA_OFFSET -1
+#define EU_INVALID_PROP_INDEX -1
+#define EU_MAX_WATCHED_PROPS 32
+#define EU_MAX_PROP_NAME_SIZE 32
 #define EU_ENTITY_SPAWN_NAME "eu_entity"
 #define EU_PREFIX " \x09[\x04EU\x09]"
 #define EU_PREFIX_CONSOLE "[EU]"
@@ -17,10 +18,27 @@
 
 #include <sourcemod>
 #include <sdktools>
-#include <cstrike>
-//#include <sdkhooks>
 
 #pragma newdecls required
+
+enum //EntityPropInfo
+{
+	ENTITY_PROP_SEND = 0,
+	ENTITY_PROP_DATA,
+	ENTITY_REFERENCE,
+	ENTITY_PROPERTY_TYPE,
+	ENTITY_SIZE,
+	ENTITY_ELEMENT,
+	ENTITY_REPLY_SOURCE,
+	ENTITY_PREVIOUS_SEND_VALUE,
+	ENTITY_PREVIOUS_DATA_VALUE,
+	
+	ENTITY_PROPERTY,
+	ENTITY_MAX
+}
+
+ArrayList g_hWatchedPropStrings[MAXPLAYERS + 1];
+ArrayList g_hWatchedProps[MAXPLAYERS + 1];
 
 ArrayList g_hEntities[MAXPLAYERS + 1];
 ArrayList g_hUnownedEntities;
@@ -31,7 +49,7 @@ ConVar g_PrintPreciseVectors;
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.0",
+	name = "Entity Utilities v1.1",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -41,7 +59,6 @@ public Plugin myinfo =
 public void OnPluginStart()
 {
 	LoadTranslations("common.phrases");
-
 	g_DestroyEntsOnDisconnect = CreateConVar("entityutilities_destroy_ents_on_disconnect", "1", "Should the players entities get destroyed on disconnect", FCVAR_NOTIFY);
 	g_PrintPreciseVectors = CreateConVar("entityutilities_print_precise_vectors", "1", "Should vectors be printed with many decimals or 2 decimals", FCVAR_NOTIFY);
 	
@@ -64,6 +81,11 @@ public void OnPluginStart()
 	RegAdminCmd("sm_ent_select_self", Command_EntSelectSelf, ADMFLAG_ROOT, "Select your player");
 	RegAdminCmd("sm_ent_select_world", Command_EntSelectWorld, ADMFLAG_ROOT, "Select the world (Entity 0)");
 	
+	RegAdminCmd("sm_ent_watch", Command_EntWatch, ADMFLAG_ROOT, "Prints to chat when prop passed by argument changes");
+	RegAdminCmd("sm_ent_unwatch", Command_EntUnwatch, ADMFLAG_ROOT, "Stops watching for prop");
+	RegAdminCmd("sm_ent_watch_clear", Command_EntWatchClear, ADMFLAG_ROOT, "Clears all watched props");
+	RegAdminCmd("sm_ent_watch_list", Command_EntWatchList, ADMFLAG_ROOT, "List all props being watched");
+	
 	RegAdminCmd("sm_ent_setprop", Command_EntSetProp, ADMFLAG_ROOT, "Set property of an entity");
 	RegAdminCmd("sm_ent_getprop", Command_EntGetProp, ADMFLAG_ROOT, "Print property of an entity");
 
@@ -76,7 +98,11 @@ public void OnPluginStart()
 	RegAdminCmd("sm_ent_count", Command_EntCount, ADMFLAG_ROOT, "Prints amount of existing entities with classname passed as arg");
 	
 	for (int i = 0; i < MAXPLAYERS + 1; i++)
+	{
 		g_hEntities[i] = new ArrayList();
+		g_hWatchedProps[i] = new ArrayList(ENTITY_MAX);
+		g_hWatchedPropStrings[i] = new ArrayList(PLATFORM_MAX_PATH);
+	}
 		
 	g_hUnownedEntities = new ArrayList();
 	
@@ -123,7 +149,7 @@ public Action Command_EntCreate(int client, int args)
 	g_iSelectedEnt[client] = ref;
 	
 	char authid[32];
-	GetClientAuthId(client, AuthId_SteamID64, authid, sizeof(authid));
+	GetClientAuthIdEx(client, AuthId_SteamID64, authid, sizeof(authid));
 	
 	char string[128];
 	Format(string, sizeof(string), "%s;%s", EU_ENTITY_SPAWN_NAME, authid);
@@ -139,19 +165,36 @@ public Action Command_EntCreate(int client, int args)
 	return Plugin_Handled;
 }
 
+stock void GetClientAuthIdEx(int client, AuthIdType type, char[] buff, int size)
+{
+	if(IsValidClient(client))
+		GetClientAuthId(client, type, buff, size);
+	else if(client == 0)
+		Format(buff, size, "server");
+}
+
 public Action Command_EntSpawn(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
 	
 	float traceendPos[3], eyeAngles[3], eyePos[3];
-	GetClientEyeAngles(client, eyeAngles);
-	GetClientEyePosition(client, eyePos);
-
-	Handle trace = TR_TraceRayFilterEx(eyePos, eyeAngles, MASK_ALL, RayType_Infinite, TraceFilterNotSelf, client);
-	if(TR_DidHit(trace))
-		TR_GetEndPosition(traceendPos, trace);
-
-	CloseHandle(trace);
+	if(IsValidClient(client))
+	{
+		GetClientEyeAngles(client, eyeAngles);
+		GetClientEyePosition(client, eyePos);
+	
+		Handle trace = TR_TraceRayFilterEx(eyePos, eyeAngles, MASK_ALL, RayType_Infinite, TraceFilterNotSelf, client);
+		if(TR_DidHit(trace))
+			TR_GetEndPosition(traceendPos, trace);
+	
+		delete trace;
+	}
+	else
+	{
+		traceendPos[0] = 0.0;
+		traceendPos[1] = 0.0;
+		traceendPos[2] = 0.0;
+	}
 
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
@@ -424,7 +467,7 @@ public Action Command_EntPosition(int client, int args)
 	if(TR_DidHit(trace))
 		TR_GetEndPosition(traceendPos, trace);
 
-	CloseHandle(trace);
+	delete trace;
 	
 	TeleportEntity(entity, traceendPos, NULL_VECTOR, NULL_VECTOR);
 	
@@ -539,8 +582,8 @@ public Action Command_EntVelocity(int client, int args)
 	char message[256];
 	Format(message, sizeof(message), "%s Set velocity to:", EU_PREFIX);
 	ReplyToCommandColor(client, message, replySource);
-	ReplyToCommandColor(client, " ", replySource);
 	PrintVector(client, "Velocity", "X", "Y", "Z", value, replySource);
+	ReplyToCommandColor(client, " ", replySource);
 	PrintString(client, "Entity", className, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
@@ -640,6 +683,567 @@ public Action Command_EntSelectWorld(int client, int args)
 	ReplySource replySource = GetCmdReplySource();
 	SelectEntity(client, 0, true, replySource);
 	return Plugin_Handled;
+}
+
+public Action Command_EntWatch(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	char prop[65], szSize[65], szElement[65];
+	GetCmdArg(1, prop, sizeof(prop));
+	
+	PropFieldType sendFieldType = PropField_Unsupported;
+	PropFieldType dataFieldType = PropField_Unsupported;
+	
+	bool send = false;
+	bool data = false;
+	
+	Format(szSize, sizeof(szSize), "%d", 4);
+	Format(szElement, sizeof(szElement), "%d", 0);
+
+	if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
+	if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
+
+	int size = StringToInt(szSize);
+	int element = StringToInt(szElement);
+	
+	char classname[65];
+	GetEntityClassname(entity, classname, sizeof(classname));
+	
+	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+		send = true;
+	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+		data = true;
+	
+	PropFieldType finalFieldType = view_as<PropFieldType>(max(view_as<int>(sendFieldType), view_as<int>(dataFieldType)));
+	
+	if(!send && !data)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Could not find property", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	int propIndex = FindWatchedProperty(client, prop, size, element);
+	if(propIndex != EU_INVALID_PROP_INDEX)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Property '\x04%s\x09' is already being watched", EU_PREFIX, prop);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	g_hWatchedProps[client].Push(send);
+	g_hWatchedProps[client].Push(data);
+	g_hWatchedProps[client].Push(g_iSelectedEnt[client]);
+	g_hWatchedProps[client].Push(finalFieldType);
+	g_hWatchedProps[client].Push(size);
+	g_hWatchedProps[client].Push(element);
+	g_hWatchedProps[client].Push(replySource);
+	
+	
+	g_hWatchedPropStrings[client].PushString(prop);
+
+	if(send)
+	{
+		switch(finalFieldType)
+		{
+			case PropField_Integer:
+			{
+				g_hWatchedProps[client].Push(GetEntProp(entity, Prop_Send, prop, size, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_Float:
+			{
+				g_hWatchedProps[client].Push(GetEntPropFloat(entity, Prop_Send, prop, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_String:
+			{
+				char value[PLATFORM_MAX_PATH];
+				GetEntPropString(entity, Prop_Send, prop, value, sizeof(value), element);
+				g_hWatchedPropStrings[client].PushString(value);
+				g_hWatchedProps[client].Push(0);
+			}
+			case PropField_String_T:
+			{
+				char value[PLATFORM_MAX_PATH];
+				GetEntPropString(entity, Prop_Send, prop, value, sizeof(value), element);
+				g_hWatchedPropStrings[client].PushString(value);
+				g_hWatchedProps[client].Push(0);
+			}
+			case PropField_Vector:
+			{
+				float value[3];
+				GetEntPropVector(entity, Prop_Send, prop, value, element);
+				g_hWatchedProps[client].PushArray(value, sizeof(value));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_Entity:
+			{
+				g_hWatchedProps[client].Push(GetEntPropEnt(entity, Prop_Send, prop, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			default:
+			{
+				g_hWatchedProps[client].Push(0);
+				g_hWatchedPropStrings[client].PushString("");
+			}
+		}
+	}
+	else
+	{
+		g_hWatchedProps[client].Push(0);
+		g_hWatchedPropStrings[client].PushString("");
+	}
+	
+	if(data)
+	{
+		switch(finalFieldType)
+		{
+			case PropField_Integer:
+			{
+				g_hWatchedProps[client].Push(GetEntProp(entity, Prop_Data, prop, size, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_Float:
+			{
+				g_hWatchedProps[client].Push(GetEntPropFloat(entity, Prop_Data, prop, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_String:
+			{
+				char value[PLATFORM_MAX_PATH];
+				GetEntPropString(entity, Prop_Data, prop, value, sizeof(value), element);
+				g_hWatchedPropStrings[client].PushString(value);
+				g_hWatchedProps[client].Push(0);
+			}
+			case PropField_String_T:
+			{
+				char value[PLATFORM_MAX_PATH];
+				GetEntPropString(entity, Prop_Data, prop, value, sizeof(value), element);
+				g_hWatchedPropStrings[client].PushString(value);
+				g_hWatchedProps[client].Push(0);
+			}
+			case PropField_Vector:
+			{
+				float value[3];
+				GetEntPropVector(entity, Prop_Data, prop, value, element);
+				g_hWatchedProps[client].PushArray(value, sizeof(value));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			case PropField_Entity:
+			{
+				g_hWatchedProps[client].Push(GetEntPropEnt(entity, Prop_Data, prop, element));
+				g_hWatchedPropStrings[client].PushString("");
+			}
+			default:
+			{
+				g_hWatchedProps[client].Push(0);
+				g_hWatchedPropStrings[client].PushString("");
+			}
+		}
+	}
+	else
+	{
+		g_hWatchedProps[client].Push(0);
+		g_hWatchedPropStrings[client].PushString("");
+	}
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Property '\x04%s\x09' is now being watched", EU_PREFIX, prop);
+	ReplyToCommandColor(client, message, replySource);
+	
+	return Plugin_Handled;
+}
+
+public Action Command_EntUnwatch(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	char prop[65], szSize[65], szElement[65];
+	GetCmdArg(1, prop, sizeof(prop));
+	
+	PropFieldType sendFieldType = PropField_Unsupported;
+	PropFieldType dataFieldType = PropField_Unsupported;
+	
+	bool send = false;
+	bool data = false;
+	
+	Format(szSize, sizeof(szSize), "%d", 4);
+	Format(szElement, sizeof(szElement), "%d", 0);
+
+	if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
+	if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
+
+	int size = StringToInt(szSize);
+	int element = StringToInt(szElement);
+	
+	char classname[65];
+	GetEntityClassname(entity, classname, sizeof(classname));
+	
+	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+		send = true;
+	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+		data = true;
+	
+	if(!send && !data)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Could not find property", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	int propIndex = FindWatchedProperty(client, prop, size, element);
+	if(propIndex == EU_INVALID_PROP_INDEX)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Property '\x04%s\x09' is not being watched", EU_PREFIX, prop);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	for (int j = ENTITY_MAX - 2; j >= 0; j--)
+		g_hWatchedProps[client].Erase(propIndex * (ENTITY_MAX - 1) + j);
+
+	g_hWatchedPropStrings[client].Erase(propIndex+2);
+	g_hWatchedPropStrings[client].Erase(propIndex+1);
+	g_hWatchedPropStrings[client].Erase(propIndex);
+
+	char message[256];
+	Format(message, sizeof(message), "%s Property '\x04%s\x09' is no longer being watched", EU_PREFIX, prop);
+	ReplyToCommandColor(client, message, replySource);
+	return Plugin_Handled;
+}
+
+stock int FindWatchedProperty(int client, const char[] prop, int size = 4, int element = 0)
+{
+	for (int i = 0; i < g_hWatchedPropStrings[client].Length / 3; i++)
+	{
+		char watchedProp[PLATFORM_MAX_PATH];
+		g_hWatchedPropStrings[client].GetString(i * 3, watchedProp, sizeof(watchedProp));
+		if(	StrEqual(prop, watchedProp, false) && 
+			size == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_SIZE) && 
+			element == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_ELEMENT))
+		{
+			// Found watched prop
+			return i;
+		}
+	}
+	return EU_INVALID_PROP_INDEX;
+}
+
+public Action Command_EntWatchClear(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_hWatchedProps[client].Length == 0)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s You do not have any watched properties", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Stopped watching \x04%d\x09 properties", EU_PREFIX, g_hWatchedPropStrings[client].Length / 3);
+	ReplyToCommandColor(client, message, replySource);
+	
+	g_hWatchedProps[client].Clear();
+	g_hWatchedPropStrings[client].Clear();
+	return Plugin_Handled;
+}
+
+public Action Command_EntWatchList(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_hWatchedProps[client].Length == 0)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s You do not have any watched properties", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	int count = 0;
+	
+	for (int i = 0; i < g_hWatchedPropStrings[client].Length / 3; i++)
+	{
+		char prop[PLATFORM_MAX_PATH];
+		bool send = false;
+		bool data = false;
+		PropFieldType dummyPropType = PropField_Unsupported;
+		int dummySize = 4;
+		int dummyElement = 0;
+		ReplySource dummyReply = SM_REPLY_TO_CHAT;
+		
+		int entity = GetWatchedProp(client, i, prop, sizeof(prop), send, data, dummyPropType, dummySize, dummyElement, dummyReply);
+		
+		char message[256];
+		
+		if(send)
+		{
+			Format(message, sizeof(message), "%s [ \x03SEND\x09 ] [ \x04%s\x09 ] [ Entity Index: \x04%d\x09 ] [ Entity Reference: \x04%d\x09 ]", EU_PREFIX, prop, entity, EntIndexToEntRef(entity));
+			ReplyToCommandColor(client, message, replySource);
+		}
+		
+		if(data)
+		{
+			Format(message, sizeof(message), "%s [ \x03DATA\x09 ] [ \x04%s\x09 ] [ Entity Index: \x04%d\x09 ] [ Entity Reference: \x04%d\x09 ]", EU_PREFIX, prop, entity, EntIndexToEntRef(entity));
+			ReplyToCommandColor(client, message, replySource);
+		}
+		
+		if(data || send)
+			count++;
+	}
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Currently watching over \x04%d\x09 properties", EU_PREFIX, count);
+	ReplyToCommandColor(client, message, replySource);
+	
+	return Plugin_Handled;
+}
+
+// Returns entity index
+public int GetWatchedProp(int client, int arrIndex, char[] propBuffer, int propBufferSize, bool& propSend, bool& propData, PropFieldType& propType, int& size, int& element, ReplySource& replySource)
+{
+	char prop[PLATFORM_MAX_PATH];
+	g_hWatchedPropStrings[client].GetString(arrIndex*3, prop, sizeof(prop));
+	
+	Format(propBuffer, propBufferSize, prop);
+	propSend = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1));
+	propData = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROP_DATA);
+	propType = view_as<PropFieldType>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROPERTY_TYPE));
+	size = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_SIZE);
+	element = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_ELEMENT);
+	replySource = view_as<ReplySource>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REPLY_SOURCE));
+	return EntRefToEntIndex(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REFERENCE));
+}
+
+public void OnGameFrame()
+{
+	for (int client = 0; client <= MaxClients; client++)
+	{
+		for (int arrIndex = 0; arrIndex < (g_hWatchedPropStrings[client].Length / 3); arrIndex++)
+		{
+			char prop[PLATFORM_MAX_PATH];
+			bool send = false;
+			bool data = false;
+			PropFieldType propType = PropField_Unsupported;
+			int size = 4;
+			int element = 0;
+			ReplySource replySource = SM_REPLY_TO_CHAT;
+			
+			int entity = GetWatchedProp(client, arrIndex, prop, sizeof(prop), send, data, propType, size, element, replySource);
+			if(!IsValidEntity(entity))
+			{
+				for (int j = ENTITY_MAX - 1; j > 0; j--)
+					g_hWatchedProps[client].Erase(arrIndex * (ENTITY_MAX - 1) + j);
+					
+				g_hWatchedPropStrings[client].Erase(arrIndex+2);
+				g_hWatchedPropStrings[client].Erase(arrIndex+1);
+				g_hWatchedPropStrings[client].Erase(arrIndex);
+			}
+			
+			if(send)
+			{
+				switch(propType)
+				{
+					case PropField_Integer:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						int newValue = GetEntProp(entity, Prop_Send, prop, size, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+					case PropField_Float:
+					{
+						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						float newValue = GetEntPropFloat(entity, Prop_Send, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+					case PropField_String:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
+							
+						}
+					}
+					case PropField_String_T:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
+							
+						}
+					}
+					case PropField_Vector:
+					{
+						float prevValue[3], newValue[3];
+						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, prevValue, sizeof(prevValue));
+						GetEntPropVector(entity, Prop_Send, prop, newValue, element);
+						if(	prevValue[0] != newValue[0] ||
+							prevValue[1] != newValue[1] ||
+							prevValue[2] != newValue[2])
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
+							ReplyToCommandColor(client, message, replySource);
+							Format(message, sizeof(message), "%s [\x03SEND\x09] [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
+							ReplyToCommandColor(client, message, replySource);
+							
+							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue, sizeof(newValue));
+						}
+					}
+					case PropField_Entity:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						int newValue = GetEntPropEnt(entity, Prop_Send, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+				}
+			}
+			if(data)
+			{
+				switch(propType)
+				{
+					case PropField_Integer:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						int newValue = GetEntProp(entity, Prop_Data, prop, size, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+					case PropField_Float:
+					{
+						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						float newValue = GetEntPropFloat(entity, Prop_Data, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+					case PropField_String:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
+							
+						}
+					}
+					case PropField_String_T:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
+
+						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
+						}
+					}
+					case PropField_Vector:
+					{
+						float prevValue[3], newValue[3];
+						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, prevValue, sizeof(prevValue));
+						GetEntPropVector(entity, Prop_Data, prop, newValue, element);
+						if(	prevValue[0] != newValue[0] ||
+							prevValue[1] != newValue[1] ||
+							prevValue[2] != newValue[2])
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
+							ReplyToCommandColor(client, message, replySource);
+							Format(message, sizeof(message), "%s [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
+							ReplyToCommandColor(client, message, replySource);
+							
+							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue, sizeof(newValue));
+						}
+					}
+					case PropField_Entity:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						int newValue = GetEntPropEnt(entity, Prop_Data, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 public Action Command_EntSetProp(int client, int args)
@@ -961,7 +1565,7 @@ public Action Command_EntSetProp(int client, int args)
 			}
 		}
 	}
-	if(data)
+	else if(data)
 	{
 		switch(dataFieldType)
 		{
@@ -1530,13 +2134,23 @@ stock int GetClientBySteamID64(const char[] steamid64)
 	for (int i = 1; i <= MaxClients; i++)
 	{
 		char authid[32];
-		GetClientAuthId(i, AuthId_SteamID64, authid, sizeof(authid));
+		GetClientAuthIdEx(i, AuthId_SteamID64, authid, sizeof(authid));
 		
 		if(StrEqual(authid, steamid64, false))
 			return i;
 	}
 	
 	return INVALID_ENT_REFERENCE;
+}
+
+stock int max(int x, int y)
+{
+	return x >= y ? x : y;
+}
+
+stock int min(int x, int y)
+{
+	return x <= y ? x : y;
 }
 
 stock bool IsValidClient(int client)
@@ -1759,7 +2373,7 @@ public void OnClientPutInServer(int client)
 		return;
 		
 	char authid[32];
-	GetClientAuthId(client, AuthId_SteamID64, authid, sizeof(authid));
+	GetClientAuthIdEx(client, AuthId_SteamID64, authid, sizeof(authid));
 	int iEnt = MAXPLAYERS + 1;
 	char targetName[32];
 	while((iEnt = FindEntityByClassname(iEnt, "*")) != -1)
