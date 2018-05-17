@@ -7,6 +7,7 @@
 #define EU_INVALID_PROP_SEND_OFFSET -1
 #define EU_INVALID_PROP_DATA_OFFSET -1
 #define EU_INVALID_PROP_INDEX -1
+#define EU_INVALID_VARIANT "INVALID_VARIANT"
 #define EU_MAX_WATCHED_PROPS 32
 #define EU_MAX_PROP_NAME_SIZE 32
 #define EU_ENTITY_SPAWN_NAME "eu_entity"
@@ -14,7 +15,7 @@
 #define EU_PREFIX_CONSOLE "[EU]"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.11"
+#define PLUGIN_VERSION "1.12"
 
 #include <sourcemod>
 #include <sdktools>
@@ -47,9 +48,11 @@ int g_iSelectedEnt[MAXPLAYERS + 1] =  { INVALID_ENT_REFERENCE, ... };
 ConVar g_DestroyEntsOnDisconnect;
 ConVar g_PrintPreciseVectors;
 
+char g_szVariantString[PLATFORM_MAX_PATH];
+
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.11",
+	name = "Entity Utilities v1.12",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -68,6 +71,8 @@ public void OnPluginStart()
 	RegAdminCmd("sm_ent_keyvaluevector", Command_EntKeyValueVector, ADMFLAG_ROOT, "Dispatch a vector keyvalue to an entity (Used before spawning)");
 	RegAdminCmd("sm_ent_spawn", Command_EntSpawn, ADMFLAG_ROOT, "Spawns the entity");
 	
+	RegAdminCmd("sm_ent_variant", Command_EntVariant, ADMFLAG_ROOT, "Set Variant String");
+	RegAdminCmd("sm_ent_variant_clear", Command_EntVariantClear, ADMFLAG_ROOT, "Clear Variant String");
 	RegAdminCmd("sm_ent_input", Command_EntInput, ADMFLAG_ROOT, "Accept Entity Input");
 	
 	RegAdminCmd("sm_ent_position", Command_EntPosition, ADMFLAG_ROOT, "Sets position of selected entity to aim (Position can be passed as arguments as 3 floats)");
@@ -96,6 +101,8 @@ public void OnPluginStart()
 	RegAdminCmd("sm_ent_list", Command_EntList, ADMFLAG_ROOT, "Lists all entities owned by a client");
 	
 	RegAdminCmd("sm_ent_count", Command_EntCount, ADMFLAG_ROOT, "Prints amount of existing entities with classname passed as arg");
+	
+	Format(g_szVariantString, sizeof(g_szVariantString), EU_INVALID_VARIANT);
 	
 	for (int i = 0; i < MAXPLAYERS + 1; i++)
 	{
@@ -400,6 +407,9 @@ public Action Command_EntInput(int client, int args)
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
 	
+	if(!StrEqual(g_szVariantString, EU_INVALID_VARIANT, false))
+		SetVariantString(g_szVariantString);
+		
 	AcceptEntityInput(entity, arg, activator, caller, outputid);
 	
 	char message[256];
@@ -415,6 +425,47 @@ public Action Command_EntInput(int client, int args)
 	return Plugin_Handled;
 }
 
+public Action Command_EntVariant(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+
+	char arg[65];
+	GetCmdArgString(arg, sizeof(arg));
+	
+	if(args == 0)
+	{
+		if(StrEqual(g_szVariantString, EU_INVALID_VARIANT, false))
+		{
+			char message[256];
+			Format(message, sizeof(message), "%s Variant string is not set", EU_PREFIX, g_szVariantString);
+			ReplyToCommandColor(client, message, replySource);
+			return Plugin_Handled;
+		}
+		char message[256];
+		Format(message, sizeof(message), "%s Current variant string: '\x04%s\x09'", EU_PREFIX, g_szVariantString);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	Format(g_szVariantString, sizeof(g_szVariantString), arg);
+
+	char message[256];
+	Format(message, sizeof(message), "%s '\x04%s\x09' will now be set before every \x04sm_ent_input \x09call", EU_PREFIX, arg);
+	ReplyToCommandColor(client, message, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntVariantClear(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+
+	Format(g_szVariantString, sizeof(g_szVariantString), EU_INVALID_VARIANT);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Variant string will no longer be set", EU_PREFIX);
+	ReplyToCommandColor(client, message, replySource);
+	return Plugin_Handled;
+}
 
 public Action Command_EntPosition(int client, int args)
 {
