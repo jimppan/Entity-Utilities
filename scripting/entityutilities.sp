@@ -12,6 +12,10 @@
 
 #define EU_CMD_SCRIPT 			"sm_ent_script"
 #define EU_CMD_SCRIPT_RELOAD 	"sm_ent_script_reload"
+#define EU_CMD_SCRIPT_RECORD 	"sm_ent_script_record"
+#define EU_CMD_SCRIPT_SAVE		"sm_ent_script_save"
+#define EU_CMD_SCRIPT_CLEAR		"sm_ent_script_clear"
+#define EU_CMD_SCRIPT_DELETE	"sm_ent_script_delete"
 
 #define EU_CMD_POSITION 		"sm_ent_position"
 #define EU_CMD_ANGLES 			"sm_ent_angles"
@@ -52,9 +56,10 @@
 #define EU_ENTITY_SPAWN_NAME "eu_entity"
 #define EU_PREFIX " \x09[\x04EU\x09]"
 #define EU_PREFIX_CONSOLE "[EU]"
+#define EU_CONFIG_FILE "entityutilities.cfg"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.13"
+#define PLUGIN_VERSION "1.14"
 
 #include <sourcemod>
 #include <sdktools>
@@ -81,6 +86,8 @@ KeyValues g_hScripts;
 
 ArrayList g_hWatchedPropStrings[MAXPLAYERS + 1];
 ArrayList g_hWatchedProps[MAXPLAYERS + 1];
+ArrayList g_hRecordedScript[MAXPLAYERS + 1];
+bool g_bRecording[MAXPLAYERS + 1] =  { false, ... };
 
 ArrayList g_hEntities[MAXPLAYERS + 1];
 ArrayList g_hUnownedEntities;
@@ -93,7 +100,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.13",
+	name = "Entity Utilities v1.14",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -118,6 +125,10 @@ public void OnPluginStart()
 	
 	RegAdminCmd(EU_CMD_SCRIPT, Command_EntScript, ADMFLAG_ROOT, "Execute multiple lines of command with a help of a script found in configs/entityutilities.cfg");
 	RegAdminCmd(EU_CMD_SCRIPT_RELOAD, Command_EntScriptReload, ADMFLAG_ROOT, "Reloads scripts (configs/entityutilities.cfg)");
+	RegAdminCmd(EU_CMD_SCRIPT_RECORD, Command_EntScriptRecord, ADMFLAG_ROOT, "Starts recording all commands executed by this plugin");
+	RegAdminCmd(EU_CMD_SCRIPT_SAVE, Command_EntScriptSave, ADMFLAG_ROOT, "Saves recorded script to configs/entityutilities.cfg");
+	RegAdminCmd(EU_CMD_SCRIPT_CLEAR, Command_EntScriptClear, ADMFLAG_ROOT, "Clears the current recording");
+	RegAdminCmd(EU_CMD_SCRIPT_DELETE, Command_EntScriptDelete, ADMFLAG_ROOT, "Delete existing script from configs/entityutilities.cfg");
 	
 	RegAdminCmd(EU_CMD_POSITION, Command_EntPosition, ADMFLAG_ROOT, "Sets position of selected entity to aim (Position can be passed as arguments as 3 floats)");
 	RegAdminCmd(EU_CMD_ANGLES, Command_EntAngles, ADMFLAG_ROOT, "Sets angles of selected entity to aim (Angles can be passed as arguments as 3 floats)");
@@ -152,6 +163,7 @@ public void OnPluginStart()
 		g_hEntities[i] = new ArrayList();
 		g_hWatchedProps[i] = new ArrayList(ENTITY_MAX);
 		g_hWatchedPropStrings[i] = new ArrayList(PLATFORM_MAX_PATH);
+		g_hRecordedScript[i] = new ArrayList(PLATFORM_MAX_PATH);
 	}
 		
 	g_hUnownedEntities = new ArrayList();
@@ -163,7 +175,7 @@ public void OnPluginStart()
 	}
 	
 	char path[PLATFORM_MAX_PATH];
-	BuildPath(Path_SM, path, sizeof(path), "configs/entityutilities.cfg");
+	BuildPath(Path_SM, path, sizeof(path), "configs/%s", EU_CONFIG_FILE);
 	g_hScripts = new KeyValues("Scripts");
 	g_hScripts.ImportFromFile(path);
 }
@@ -177,7 +189,16 @@ public Action Command_EntCreate(int client, int args)
 	
 	char arg[65];
 	GetCmdArg(1, arg, sizeof(arg));
-
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntCreate(client, arg, args, replySource);
 	return Plugin_Handled;
 }
@@ -186,6 +207,12 @@ public Action Command_EntSpawn(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
 	CMDEntSpawn(client, args, replySource);
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
 	return Plugin_Handled;
 }
 
@@ -196,6 +223,15 @@ public Action Command_EntKeyValue(int client, int args)
 	char arg[65], arg2[65];
 	GetCmdArg(1, arg, sizeof(arg));
 	GetCmdArg(2, arg2, sizeof(arg2));
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s", command, arg, arg2);
+		RecordScriptCommand(client, command);
+	}
 	
 	CMDEntKeyValue(client, arg, arg2, args, replySource);
 	return Plugin_Handled;
@@ -208,6 +244,15 @@ public Action Command_EntKeyValueFloat(int client, int args)
 	char arg[65], arg2[65];
 	GetCmdArg(1, arg, sizeof(arg));
 	GetCmdArg(2, arg2, sizeof(arg2));
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s", command, arg, arg2);
+		RecordScriptCommand(client, command);
+	}
 	
 	float value = StringToFloat(arg2);
 	CMDEntKeyValueFloat(client, arg, value, args, replySource);
@@ -228,6 +273,15 @@ public Action Command_EntKeyValueVector(int client, int args)
 	value[0] = StringToFloat(arg2);
 	value[1] = StringToFloat(arg3);
 	value[2] = StringToFloat(arg4);
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s %s %s", command, arg, arg2, arg3, arg4);
+		RecordScriptCommand(client, command);
+	}
 	
 	CMDEntKeyValueVector(client, arg, value, args, replySource);
 	
@@ -255,6 +309,16 @@ public Action Command_EntInput(int client, int args)
 	int activator = StringToInt(arg2);
 	int caller = StringToInt(arg3);
 	int outputid = StringToInt(arg4);
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s %s %s", command, arg, arg2, arg3, arg4);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntInput(client, arg, activator, caller, outputid, args, replySource);
 	return Plugin_Handled;
 }
@@ -266,6 +330,15 @@ public Action Command_EntScript(int client, int args)
 	char script[65];
 	GetCmdArg(1, script, sizeof(script));
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, script);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntScript(client, script, args, replySource);
 	return Plugin_Handled;
 }
@@ -273,7 +346,84 @@ public Action Command_EntScript(int client, int args)
 public Action Command_EntScriptReload(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntScriptReload(client, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptRecord(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	/* DO NOT RECORD THIS COMMAND
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	*/
+	CMDEntScriptRecord(client, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptSave(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArgString(arg, sizeof(arg));
+	/* DO NOT RECORD THIS COMMAND
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	*/
+	
+	CMDEntScriptSave(client, arg, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptClear(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	/* DO NOT RECORD THIS COMMAND
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	*/
+	CMDEntScriptClear(client, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptDelete(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArgString(arg, sizeof(arg));
+	/* DO NOT RECORD THIS COMMAND
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	*/
+	CMDEntScriptDelete(client, arg, args, replySource);	
 	return Plugin_Handled;
 }
 
@@ -284,6 +434,15 @@ public Action Command_EntVariant(int client, int args)
 	char arg[65];
 	GetCmdArgString(arg, sizeof(arg));
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntVariant(client, arg, args, replySource);
 	return Plugin_Handled;
 }
@@ -291,6 +450,14 @@ public Action Command_EntVariant(int client, int args)
 public Action Command_EntVariantClear(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntVariantClear(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -313,6 +480,15 @@ public Action Command_EntPosition(int client, int args)
 		value[2] = StringToFloat(arg3);
 	}
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s %s", command, arg, arg2, arg3);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntPosition(client, value, args, replySource);
 	return Plugin_Handled;
 }
@@ -332,6 +508,16 @@ public Action Command_EntAngles(int client, int args)
 		value[1] = StringToFloat(arg2);
 		value[2] = StringToFloat(arg3);
 	}
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s %s", command, arg, arg2, arg3);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntAngles(client, value, args, replySource);
 
 	return Plugin_Handled;
@@ -351,6 +537,16 @@ public Action Command_EntVelocity(int client, int args)
 	value[0] = StringToFloat(arg);
 	value[1] = StringToFloat(arg2);
 	value[2] = StringToFloat(arg3);
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %s %s", command, arg, arg2, arg3);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntVelocity(client, value, args, replySource);
 	return Plugin_Handled;
 }
@@ -361,6 +557,15 @@ public Action Command_EntSelect(int client, int args)
 	char arg[65];
 	GetCmdArg(1, arg, sizeof(arg));
 		
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+		
 	CMDEntSelect(client, arg, args, replySource);
 	return Plugin_Handled;
 }
@@ -368,6 +573,14 @@ public Action Command_EntSelect(int client, int args)
 public Action Command_EntSelected(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntSelected(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -378,6 +591,15 @@ public Action Command_EntSelectIndex(int client, int args)
 	
 	char arg[65];
 	GetCmdArg(1, arg, sizeof(arg));
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
 	
 	int entity = StringToInt(arg);
 	CMDEntSelectIndex(client, entity, args, replySource);
@@ -393,6 +615,15 @@ public Action Command_EntSelectRef(int client, int args)
 	
 	int ref = StringToInt(arg);
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntSelectRef(client, ref, args, replySource);
 	return Plugin_Handled;
 }
@@ -400,6 +631,14 @@ public Action Command_EntSelectRef(int client, int args)
 public Action Command_EntSelectSelf(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntSelectSelf(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -407,6 +646,14 @@ public Action Command_EntSelectSelf(int client, int args)
 public Action Command_EntSelectWorld(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntSelectWorld(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -431,6 +678,15 @@ public Action Command_EntWatch(int client, int args)
 	{
 		GetCmdArg(3, szElement, sizeof(szElement));
 		element = StringToInt(szElement);
+	}
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %d %d", command, prop, size, element);
+		RecordScriptCommand(client, command);
 	}
 	
 	CMDEntWatch(client, prop, size, element, args, replySource);
@@ -460,6 +716,15 @@ public Action Command_EntUnwatch(int client, int args)
 		element = StringToInt(szElement);
 	}
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %d %d", command, prop, size, element);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntUnwatch(client, prop, size, element, args, replySource);
 	
 	return Plugin_Handled;
@@ -468,6 +733,14 @@ public Action Command_EntUnwatch(int client, int args)
 public Action Command_EntWatchClear(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntWatchClear(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -475,6 +748,14 @@ public Action Command_EntWatchClear(int client, int args)
 public Action Command_EntWatchList(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntWatchList(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -549,6 +830,15 @@ public Action Command_EntSetProp(int client, int args)
 		GetCmdArg(3, szValue2, sizeof(szValue2));
 		GetCmdArg(4, szValue3, sizeof(szValue3));
 		
+		if(g_bRecording[client])
+		{
+			char command[PLATFORM_MAX_PATH];
+			GetCmdArg(0, command, sizeof(command));
+			
+			Format(command, sizeof(command), "%s %s %s %s %s %d %d", command, prop, szValue1, szValue2, szValue3, size, element);
+			RecordScriptCommand(client, command);
+		}
+		
 		CMDEntSetProp(client, prop, szValue1, szValue2, szValue3, size, element, args, replySource);
 	}
 	else
@@ -574,6 +864,15 @@ public Action Command_EntSetProp(int client, int args)
 		}
 		
 		GetCmdArg(2, szValue1, sizeof(szValue1));
+		
+		if(g_bRecording[client])
+		{
+			char command[PLATFORM_MAX_PATH];
+			GetCmdArg(0, command, sizeof(command));
+			
+			Format(command, sizeof(command), "%s %s %s %d %d", command, prop, szValue1, size, element);
+			RecordScriptCommand(client, command);
+		}
 		
 		CMDEntSetProp(client, prop, szValue1, szValue2, szValue3, size, element, args, replySource);
 	}
@@ -601,6 +900,15 @@ public Action Command_EntGetProp(int client, int args)
 		element = StringToInt(szElement);
 	}
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s %d %d", command, prop, size, element);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntGetProp(client, prop, size, element, args, replySource);
 
 	return Plugin_Handled;
@@ -609,6 +917,14 @@ public Action Command_EntGetProp(int client, int args)
 public Action Command_KillAll(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDKillAll(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -616,6 +932,14 @@ public Action Command_KillAll(int client, int args)
 public Action Command_KillMy(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDKillMy(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -623,6 +947,14 @@ public Action Command_KillMy(int client, int args)
 public Action Command_KillUnowned(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDKillUnowned(client, args, replySource);
 	return Plugin_Handled;
 }
@@ -634,6 +966,15 @@ public Action Command_EntCount(int client, int args)
 	char arg[65];
 	GetCmdArg(1, arg, sizeof(arg));
 	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	
 	CMDEntCount(client, arg, args, replySource);
 	return Plugin_Handled;
 }
@@ -644,6 +985,15 @@ public Action Command_EntList(int client, int args)
 	
 	char arg[65];
 	GetCmdArg(1, arg, sizeof(arg));
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
 	
 	CMDEntList(client, arg, args, replySource);
 
@@ -937,23 +1287,17 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			if(StrEqual(commandArguments[0], EU_CMD_CREATE_ENTITY, false))				//sm_ent_create <classname(string>
 	 			{
 					if(argCount == 1) 
-					{
 						CMDEntCreate(client, commandArguments[1], argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE, false))				//sm_ent_keyvalue <key(string> <value(string)>
 	 			{
 					if(argCount == 2) 
-					{
 						CMDEntKeyValue(client, commandArguments[1], commandArguments[2], argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_FLOAT, false))		//sm_ent_keyvaluefloat <key(string> <value(float)>
 	 			{
 					if(argCount == 2) 
-					{
 						CMDEntKeyValueFloat(client, commandArguments[1], StringToFloat(commandArguments[2]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_VECTOR, false))		//sm_ent_keyvaluevector <key(string)> <value1(float)> <value2(float)> <value3(float)>
 	 			{
@@ -981,20 +1325,34 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			else if(StrEqual(commandArguments[0], EU_CMD_INPUT, false))					//sm_ent_input <input(string)> <activator(int)[optional]> <caller(int)[optional]> <outputid(int)[optional]> 
 	 			{
 					if(argCount > 0 && argCount < 5) 
-					{
 						CMDEntInput(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), StringToInt(commandArguments[4]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT, false))				//sm_ent_script <script(string)>
 	 			{
 					if(argCount == 1)
-					{
 						CMDEntScript(client, commandArguments[1], argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_RELOAD, false))			//sm_ent_script_reload
 	 			{
 	 				CMDEntScriptReload(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_RECORD, false))			//sm_ent_script_record
+	 			{
+	 				CMDEntScriptRecord(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_SAVE, false))			//sm_ent_script_save <name(string)>
+	 			{
+	 				if(argCount == 1)
+	 					CMDEntScriptSave(client, commandArguments[1], argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_CLEAR, false))			//sm_ent_script_clear
+	 			{
+	 				CMDEntScriptClear(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_DELETE, false))			//sm_ent_script_delete <name(string)>
+	 			{
+	 				if(argCount == 1)
+	 					CMDEntScriptDelete(client, commandArguments[1], argCount, replySource);
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_POSITION, false))				//sm_ent_position <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
 	 			{
@@ -1034,16 +1392,12 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_INDEX, false))			//sm_ent_select_index <index(int)>
 	 			{
 	 				if(argCount == 1) 
-					{
 						CMDEntSelectIndex(client, StringToInt(commandArguments[1]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_REF, false))			//sm_ent_select_ref <reference(int)>
 	 			{
 	 				if(argCount == 1)
-					{
 						CMDEntSelectRef(client, StringToInt(commandArguments[1]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_SELF, false))			//sm_ent_select_self
 	 			{
@@ -1056,16 +1410,12 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			else if(StrEqual(commandArguments[0], EU_CMD_WATCH, false))					//sm_ent_watch <prop(string)> <size(int)[optional]> <element(int)[optional]>
 	 			{
 	 				if(argCount > 0 && argCount < 4)
-					{
 						CMDEntWatch(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_UNWATCH, false))				//sm_ent_unwatch <prop(string)> <size(int)[optional]> <element(int)[optional]>
 	 			{
 	 				if(argCount > 0 && argCount < 4)
-					{
 						CMDEntUnwatch(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_WATCH_CLEAR, false))			//sm_ent_watch_clear
 	 			{
@@ -1078,16 +1428,12 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			else if(StrEqual(commandArguments[0], EU_CMD_SET_PROP, false))				//sm_ent_setprop <prop(string)> <value1(any)> <value2(float)[optional]> <value3(float)[optional]> <size(int)[optional]> <element(int)[optional]>
 	 			{
 	 				if(argCount > 0 && argCount < 7)
-					{
 						CMDEntSetProp(client, commandArguments[1], commandArguments[2], commandArguments[3], commandArguments[4], StringToInt(commandArguments[5]), StringToInt(commandArguments[6]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_GET_PROP, false))				//sm_ent_getprop <prop(string)> <size(int)[optional]> <element(int)[optional]>
 	 			{
 	 				if(argCount > 0 && argCount < 4)
-					{
 						CMDEntGetProp(client, commandArguments[1], StringToInt(commandArguments[1]), StringToInt(commandArguments[1]), argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_KILL_ALL, false))				//sm_ent_killall
 	 			{
@@ -1104,16 +1450,12 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			else if(StrEqual(commandArguments[0], EU_CMD_LIST, false))					//sm_ent_list <#userid(int)|name(string)>
 	 			{
 					if(argCount == 1)
-					{
 						CMDEntList(client, commandArguments[1], argCount, replySource);
-					}
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_COUNT, false))					//sm_ent_count <classname>
 	 			{
 					if(argCount == 1)
-					{
 						CMDEntCount(client, commandArguments[1], argCount, replySource);
-					}
 	 			}
 			}
 		}
@@ -1132,12 +1474,101 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 stock void CMDEntScriptReload(int client, int args, ReplySource replySource)
 {
 	char path[PLATFORM_MAX_PATH];
-	BuildPath(Path_SM, path, sizeof(path), "configs/entityutilities.cfg");
+	BuildPath(Path_SM, path, sizeof(path), "configs/%s", EU_CONFIG_FILE);
 	g_hScripts = new KeyValues("Scripts");
 	g_hScripts.ImportFromFile(path);
 
 	char message[256];
 	Format(message, sizeof(message), "%s Scripts reloaded!", EU_PREFIX);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptRecord(int client, int args, ReplySource replySource)
+{
+	g_bRecording[client] = true;
+	char message[256];
+	Format(message, sizeof(message), "%s Commands are now being recorded!", EU_PREFIX);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptSave(int client, const char[] name, int args, ReplySource replySource)
+{
+	if(args != 1)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_script_save <name>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	g_hScripts.Rewind();
+	if(g_hScripts.JumpToKey(name, false))
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Script '\x04%s\x09' already exists", EU_PREFIX, name);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	g_hScripts.JumpToKey(name, true);
+	
+	for (int i = 0; i < g_hRecordedScript[client].Length; i++)
+	{
+		char key[8], command[PLATFORM_MAX_PATH];
+		Format(key, sizeof(key), "%d", i + 1);
+		g_hRecordedScript[client].GetString(i, command, sizeof(command));
+		g_hScripts.SetString(key, command);
+	}
+	
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), "configs/%s", EU_CONFIG_FILE);
+	
+	g_hScripts.Rewind();
+	g_hScripts.ExportToFile(path);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Script '\x04%s\x09' saved!", EU_PREFIX, name);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptClear(int client, int args, ReplySource replySource)
+{
+	g_hRecordedScript[client].Clear();
+
+	char message[256];
+	Format(message, sizeof(message), "%s Script recording cleared!", EU_PREFIX);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptDelete(int client, const char[] name, int args, ReplySource replySource)
+{
+	if(args != 1)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_script_delete <name>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	g_hScripts.Rewind();
+	if(!g_hScripts.JumpToKey(name, false))
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Script '\x04%s\x09' does not exist", EU_PREFIX, name);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	g_hScripts.DeleteThis();
+	
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), "configs/%s", EU_CONFIG_FILE);
+	
+	g_hScripts.Rewind();
+	g_hScripts.ExportToFile(path);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Script '\x04%s\x09' deleted!", EU_PREFIX, name);
 	ReplyToCommandColor(client, message, replySource);
 }
 
@@ -2143,6 +2574,167 @@ stock void CMDEntList(int client, const char[] szTarget, int args, ReplySource r
 /**********/
 /* STOCKS */
 /**********/
+stock void RecordScriptCommand(int client, const char[] command)
+{
+	char commandArguments[8][PLATFORM_MAX_PATH];
+   	ExplodeString(command, " ", commandArguments, sizeof(commandArguments), sizeof(commandArguments[]));
+  	int argCount = GetStringCount(commandArguments, 8) - 1;
+  	
+  	if(StrEqual(commandArguments[0], EU_CMD_CREATE_ENTITY, false))				//sm_ent_create <classname(string>
+	{
+		if(argCount == 1) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE, false))				//sm_ent_keyvalue <key(string> <value(string)>
+	{
+		if(argCount == 2) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_FLOAT, false))		//sm_ent_keyvaluefloat <key(string> <value(float)>
+	{
+		if(argCount == 2) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_VECTOR, false))		//sm_ent_keyvaluevector <key(string)> <value1(float)> <value2(float)> <value3(float)>
+	{
+		if(argCount == 4) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SPAWN, false))					//sm_ent_spawn
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_VARIANT, false))				//sm_ent_variant <variant(string)[optional]>
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_VARIANT_CLEAR, false))			//sm_ent_variant_clear
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_INPUT, false))					//sm_ent_input <input(string)> <activator(int)[optional]> <caller(int)[optional]> <outputid(int)[optional]> 
+	{
+		if(argCount > 0 && argCount < 5) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT, false))				//sm_ent_script <script(string)>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_RELOAD, false))			//sm_ent_script_reload
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_RECORD, false))			//sm_ent_script_record
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_SAVE, false))			//sm_ent_script_save <name(string)>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_CLEAR, false))			//sm_ent_script_clear
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_DELETE, false))			//sm_ent_script_delete <name(string)>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_POSITION, false))				//sm_ent_position <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_ANGLES, false))				//sm_ent_angles <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_VELOCITY, false))				//sm_ent_velocity <value1(float)> <value2(float)> <value3(float)>
+	{
+		if(argCount == 3)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECTED, false))				//sm_ent_selected
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECT, false))				//sm_ent_select <name(string)[optional]>
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECT_INDEX, false))			//sm_ent_select_index <index(int)>
+	{
+		if(argCount == 1) 
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECT_REF, false))			//sm_ent_select_ref <reference(int)>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECT_SELF, false))			//sm_ent_select_self
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SELECT_WORLD, false))			//sm_ent_select_world
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_WATCH, false))					//sm_ent_watch <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	{
+		if(argCount > 0 && argCount < 4)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_UNWATCH, false))				//sm_ent_unwatch <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	{
+		if(argCount > 0 && argCount < 4)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_WATCH_CLEAR, false))			//sm_ent_watch_clear
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_WATCH_LIST, false))			//sm_ent_watch_list
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SET_PROP, false))				//sm_ent_setprop <prop(string)> <value1(any)> <value2(float)[optional]> <value3(float)[optional]> <size(int)[optional]> <element(int)[optional]>
+	{
+		if(argCount > 0 && argCount < 7)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_GET_PROP, false))				//sm_ent_getprop <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	{
+		if(argCount > 0 && argCount < 4)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KILL_ALL, false))				//sm_ent_killall
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KILL_MY, false))				//sm_ent_killmy
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_KILL_UNOWNED, false))			//sm_ent_killunowned
+	{
+		g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_LIST, false))					//sm_ent_list <#userid(int)|name(string)>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_COUNT, false))					//sm_ent_count <classname>
+	{
+		if(argCount == 1)
+			g_hRecordedScript[client].PushString(command);
+	}
+}
+
 stock void GetClientAuthIdEx(int client, AuthIdType type, char[] buff, int size)
 {
 	if(IsValidClient(client))
@@ -2656,7 +3248,13 @@ public void OnClientDisconnect(int client)
 		for (int i = 0; i < g_hEntities[client].Length; i++)
 			g_hUnownedEntities.Push(g_hEntities[client].Get(i));
 	}
+	
+	g_bRecording[client] = false;
+	g_iSelectedEnt[client] = INVALID_ENT_REFERENCE;
 	g_hEntities[client].Clear();
+	g_hRecordedScript[client].Clear();
+	g_hWatchedProps[client].Clear();
+	g_hWatchedPropStrings[client].Clear();
 }
 
 public void OnClientPutInServer(int client)
