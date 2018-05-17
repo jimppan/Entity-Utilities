@@ -16,6 +16,7 @@
 #define EU_CMD_SCRIPT_SAVE		"sm_ent_script_save"
 #define EU_CMD_SCRIPT_CLEAR		"sm_ent_script_clear"
 #define EU_CMD_SCRIPT_DELETE	"sm_ent_script_delete"
+#define EU_CMD_SCRIPT_LIST		"sm_ent_script_list"
 
 #define EU_CMD_POSITION 		"sm_ent_position"
 #define EU_CMD_ANGLES 			"sm_ent_angles"
@@ -59,7 +60,7 @@
 #define EU_CONFIG_FILE "entityutilities.cfg"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.15"
+#define PLUGIN_VERSION "1.16"
 
 #include <sourcemod>
 #include <sdktools>
@@ -100,7 +101,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.15",
+	name = "Entity Utilities v1.16",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -129,6 +130,7 @@ public void OnPluginStart()
 	RegAdminCmd(EU_CMD_SCRIPT_SAVE, Command_EntScriptSave, ADMFLAG_ROOT, "Saves recorded script to configs/entityutilities.cfg");
 	RegAdminCmd(EU_CMD_SCRIPT_CLEAR, Command_EntScriptClear, ADMFLAG_ROOT, "Clears the current recording");
 	RegAdminCmd(EU_CMD_SCRIPT_DELETE, Command_EntScriptDelete, ADMFLAG_ROOT, "Delete existing script from configs/entityutilities.cfg");
+	RegAdminCmd(EU_CMD_SCRIPT_LIST, Command_EntScriptList, ADMFLAG_ROOT, "List all existing scripts in configs/entityutilities.cfg");
 	
 	RegAdminCmd(EU_CMD_POSITION, Command_EntPosition, ADMFLAG_ROOT, "Sets position of selected entity to aim (Position can be passed as arguments as 3 floats)");
 	RegAdminCmd(EU_CMD_ANGLES, Command_EntAngles, ADMFLAG_ROOT, "Sets angles of selected entity to aim (Angles can be passed as arguments as 3 floats)");
@@ -424,6 +426,25 @@ public Action Command_EntScriptDelete(int client, int args)
 	}
 	*/
 	CMDEntScriptDelete(client, arg, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptList(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	
+	if(g_bRecording[client])
+	{
+		char command[PLATFORM_MAX_PATH];
+		GetCmdArg(0, command, sizeof(command));
+		Format(command, sizeof(command), "%s %s", command, arg);
+		RecordScriptCommand(client, command);
+	}
+	
+	CMDEntScriptList(client, arg, args, replySource);	
 	return Plugin_Handled;
 }
 
@@ -1270,9 +1291,7 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	{
 		
 		int counter = 1;
-		char command[PLATFORM_MAX_PATH], szReplySource[16];
-		g_hScripts.GetString("replysource", szReplySource, sizeof(szReplySource), "chat");
-		
+		char command[PLATFORM_MAX_PATH];
 		while(!StrEqual(command, "STOP", false))
 		{
 			char szCounter[16];
@@ -1353,6 +1372,10 @@ stock void CMDEntScript(int client, const char[] script, int args, ReplySource r
 	 			{
 	 				if(argCount == 1)
 	 					CMDEntScriptDelete(client, commandArguments[1], argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_LIST, false))			//sm_ent_script_list
+	 			{
+	 				CMDEntScriptList(client, commandArguments[1], argCount, replySource);
 	 			}
 	 			else if(StrEqual(commandArguments[0], EU_CMD_POSITION, false))				//sm_ent_position <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
 	 			{
@@ -1572,6 +1595,64 @@ stock void CMDEntScriptDelete(int client, const char[] name, int args, ReplySour
 	char message[256];
 	Format(message, sizeof(message), "%s Script '\x04%s\x09' deleted!", EU_PREFIX, name);
 	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptList(int client, const char[] script, int args, ReplySource replySource)
+{
+	g_hScripts.Rewind();
+	if(args != 1)
+	{
+		int count = 0;
+		if(!g_hScripts.GotoFirstSubKey())
+		{
+			char message[256];
+			Format(message, sizeof(message), "%s No scripts found", EU_PREFIX);
+			ReplyToCommandColor(client, message, replySource);
+			return;
+		}
+		
+		do 
+		{
+			char name[PLATFORM_MAX_PATH];
+			g_hScripts.GetSectionName(name, sizeof(name));
+			char message[256];
+			Format(message, sizeof(message), "%s \x04%s", EU_PREFIX, name);
+			ReplyToCommandColor(client, message, replySource);
+			count++;
+			
+		} while (g_hScripts.GotoNextKey());
+		
+		char message[256];
+		Format(message, sizeof(message), "%s Total: \x04%d\x09", EU_PREFIX, count);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+
+	if(!g_hScripts.JumpToKey(script))
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Script '\x04%s\x09' does not exist", EU_PREFIX, script);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Script '\x04%s\x09':", EU_PREFIX, script);
+	ReplyToCommandColor(client, message, replySource);
+	
+	int counter = 1;
+	char command[PLATFORM_MAX_PATH];
+	while(!StrEqual(command, "STOP", false))
+	{
+		char szCounter[16];
+		IntToString(counter++, szCounter, sizeof(szCounter));
+		g_hScripts.GetString(szCounter, command, sizeof(command), "STOP");
+		if(!StrEqual(command, "STOP", false)) //confused
+		{
+			Format(message, sizeof(message), "%s - %s", EU_PREFIX, command);
+			ReplyToCommandColor(client, message, replySource);
+		}
+	}
 }
 
 stock void CMDEntVariant(int client, const char[] value, int args, ReplySource replySource)
@@ -2645,6 +2726,10 @@ stock void RecordScriptCommand(int client, const char[] command)
 	{
 		if(argCount == 1)
 			g_hRecordedScript[client].PushString(command);
+	}
+	else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_LIST, false))			//sm_ent_script_list
+	{
+		g_hRecordedScript[client].PushString(command);
 	}
 	else if(StrEqual(commandArguments[0], EU_CMD_POSITION, false))				//sm_ent_position <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
 	{
