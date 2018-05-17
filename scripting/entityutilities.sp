@@ -59,7 +59,7 @@
 #define EU_CONFIG_FILE "entityutilities.cfg"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.14"
+#define PLUGIN_VERSION "1.15"
 
 #include <sourcemod>
 #include <sdktools>
@@ -100,7 +100,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.14",
+	name = "Entity Utilities v1.15",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -1528,6 +1528,7 @@ stock void CMDEntScriptSave(int client, const char[] name, int args, ReplySource
 	
 	char message[256];
 	Format(message, sizeof(message), "%s Script '\x04%s\x09' saved!", EU_PREFIX, name);
+	g_bRecording[client] = false;
 	ReplyToCommandColor(client, message, replySource);
 }
 
