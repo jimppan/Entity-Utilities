@@ -1,5 +1,44 @@
 #pragma semicolon 1
 
+#define EU_CMD_CREATE_ENTITY 	"sm_ent_create"
+#define EU_CMD_KEYVALUE 		"sm_ent_keyvalue"
+#define EU_CMD_KEYVALUE_FLOAT 	"sm_ent_keyvaluefloat"
+#define EU_CMD_KEYVALUE_VECTOR 	"sm_ent_keyvaluevector"
+#define EU_CMD_SPAWN 			"sm_ent_spawn"
+
+#define EU_CMD_VARIANT			"sm_ent_variant"
+#define EU_CMD_VARIANT_CLEAR	"sm_ent_variant_clear"
+#define EU_CMD_INPUT 			"sm_ent_input"
+
+#define EU_CMD_SCRIPT 			"sm_ent_script"
+#define EU_CMD_SCRIPT_RELOAD 	"sm_ent_script_reload"
+
+#define EU_CMD_POSITION 		"sm_ent_position"
+#define EU_CMD_ANGLES 			"sm_ent_angles"
+#define EU_CMD_VELOCITY 		"sm_ent_velocity"
+
+#define EU_CMD_SELECTED 		"sm_ent_selected"
+#define EU_CMD_SELECT 			"sm_ent_select"
+#define EU_CMD_SELECT_INDEX 	"sm_ent_select_index"
+#define EU_CMD_SELECT_REF 		"sm_ent_select_ref"
+#define EU_CMD_SELECT_SELF 		"sm_ent_select_self"
+#define EU_CMD_SELECT_WORLD 	"sm_ent_select_world"
+
+#define EU_CMD_WATCH 			"sm_ent_watch"
+#define EU_CMD_UNWATCH 			"sm_ent_unwatch"
+#define EU_CMD_WATCH_CLEAR 		"sm_ent_watch_clear"
+#define EU_CMD_WATCH_LIST		"sm_ent_watch_list"
+
+#define EU_CMD_SET_PROP 		"sm_ent_setprop"
+#define EU_CMD_GET_PROP 		"sm_ent_getprop"
+
+#define EU_CMD_KILL_ALL 		"sm_ent_killall"
+#define EU_CMD_KILL_MY 			"sm_ent_killmy"
+#define EU_CMD_KILL_UNOWNED 	"sm_ent_killunowned"
+
+#define EU_CMD_LIST				"sm_ent_list"
+#define EU_CMD_COUNT 			"sm_ent_count"
+
 #define EU_MAX_ENT 64
 #define EU_PROP_INVALID -1
 #define EU_PROP_SEND 0
@@ -15,7 +54,7 @@
 #define EU_PREFIX_CONSOLE "[EU]"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.12"
+#define PLUGIN_VERSION "1.13"
 
 #include <sourcemod>
 #include <sdktools>
@@ -38,6 +77,8 @@ enum //EntityPropInfo
 	ENTITY_MAX
 }
 
+KeyValues g_hScripts;
+
 ArrayList g_hWatchedPropStrings[MAXPLAYERS + 1];
 ArrayList g_hWatchedProps[MAXPLAYERS + 1];
 
@@ -52,7 +93,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.12",
+	name = "Entity Utilities v1.13",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -65,42 +106,44 @@ public void OnPluginStart()
 	g_DestroyEntsOnDisconnect = CreateConVar("entityutilities_destroy_ents_on_disconnect", "1", "Should the players entities get destroyed on disconnect", FCVAR_NOTIFY);
 	g_PrintPreciseVectors = CreateConVar("entityutilities_print_precise_vectors", "1", "Should vectors be printed with many decimals or 2 decimals", FCVAR_NOTIFY);
 	
-	RegAdminCmd("sm_ent_create", Command_EntCreate, ADMFLAG_ROOT, "Creates an entity");
-	RegAdminCmd("sm_ent_keyvalue", Command_EntKeyValue, ADMFLAG_ROOT, "Dispatch a keyvalue to an entity (Used before spawning)");
-	RegAdminCmd("sm_ent_keyvaluefloat", Command_EntKeyValueFloat, ADMFLAG_ROOT, "Dispatch a float keyvalue to an entity (Used before spawning)");
-	RegAdminCmd("sm_ent_keyvaluevector", Command_EntKeyValueVector, ADMFLAG_ROOT, "Dispatch a vector keyvalue to an entity (Used before spawning)");
-	RegAdminCmd("sm_ent_spawn", Command_EntSpawn, ADMFLAG_ROOT, "Spawns the entity");
+	RegAdminCmd(EU_CMD_CREATE_ENTITY, Command_EntCreate, ADMFLAG_ROOT, "Creates an entity");
+	RegAdminCmd(EU_CMD_KEYVALUE, Command_EntKeyValue, ADMFLAG_ROOT, "Dispatch a keyvalue to an entity (Used before spawning)");
+	RegAdminCmd(EU_CMD_KEYVALUE_FLOAT, Command_EntKeyValueFloat, ADMFLAG_ROOT, "Dispatch a float keyvalue to an entity (Used before spawning)");
+	RegAdminCmd(EU_CMD_KEYVALUE_VECTOR, Command_EntKeyValueVector, ADMFLAG_ROOT, "Dispatch a vector keyvalue to an entity (Used before spawning)");
+	RegAdminCmd(EU_CMD_SPAWN, Command_EntSpawn, ADMFLAG_ROOT, "Spawns the entity");
 	
-	RegAdminCmd("sm_ent_variant", Command_EntVariant, ADMFLAG_ROOT, "Set Variant String");
-	RegAdminCmd("sm_ent_variant_clear", Command_EntVariantClear, ADMFLAG_ROOT, "Clear Variant String");
-	RegAdminCmd("sm_ent_input", Command_EntInput, ADMFLAG_ROOT, "Accept Entity Input");
+	RegAdminCmd(EU_CMD_VARIANT, Command_EntVariant, ADMFLAG_ROOT, "Set Variant String");
+	RegAdminCmd(EU_CMD_VARIANT_CLEAR, Command_EntVariantClear, ADMFLAG_ROOT, "Clear Variant String");
+	RegAdminCmd(EU_CMD_INPUT, Command_EntInput, ADMFLAG_ROOT, "Accept Entity Input");
 	
-	RegAdminCmd("sm_ent_position", Command_EntPosition, ADMFLAG_ROOT, "Sets position of selected entity to aim (Position can be passed as arguments as 3 floats)");
-	RegAdminCmd("sm_ent_angles", Command_EntAngles, ADMFLAG_ROOT, "Sets angles of selected entity to aim (Angles can be passed as arguments as 3 floats)");
-	RegAdminCmd("sm_ent_velocity", Command_EntVelocity, ADMFLAG_ROOT, "Sets velocity of selected entity, passed by argument as 3 floats");
+	RegAdminCmd(EU_CMD_SCRIPT, Command_EntScript, ADMFLAG_ROOT, "Execute multiple lines of command with a help of a script found in configs/entityutilities.cfg");
+	RegAdminCmd(EU_CMD_SCRIPT_RELOAD, Command_EntScriptReload, ADMFLAG_ROOT, "Reloads scripts (configs/entityutilities.cfg)");
 	
-	RegAdminCmd("sm_ent_selected", Command_EntSelected, ADMFLAG_ROOT, "Prints generic information about selected entity");
-	RegAdminCmd("sm_ent_select", Command_EntSelect, ADMFLAG_ROOT, "Select an entity at aim (Selects by name if argument is passed)");
-	RegAdminCmd("sm_ent_select_index", Command_EntSelectIndex, ADMFLAG_ROOT, "Select an entity by entity index");
-	RegAdminCmd("sm_ent_select_ref", Command_EntSelectRef, ADMFLAG_ROOT, "Select an entity by entity reference");
-	RegAdminCmd("sm_ent_select_self", Command_EntSelectSelf, ADMFLAG_ROOT, "Select your player");
-	RegAdminCmd("sm_ent_select_world", Command_EntSelectWorld, ADMFLAG_ROOT, "Select the world (Entity 0)");
+	RegAdminCmd(EU_CMD_POSITION, Command_EntPosition, ADMFLAG_ROOT, "Sets position of selected entity to aim (Position can be passed as arguments as 3 floats)");
+	RegAdminCmd(EU_CMD_ANGLES, Command_EntAngles, ADMFLAG_ROOT, "Sets angles of selected entity to aim (Angles can be passed as arguments as 3 floats)");
+	RegAdminCmd(EU_CMD_VELOCITY, Command_EntVelocity, ADMFLAG_ROOT, "Sets velocity of selected entity, passed by argument as 3 floats");
 	
-	RegAdminCmd("sm_ent_watch", Command_EntWatch, ADMFLAG_ROOT, "Prints to chat when prop passed by argument changes");
-	RegAdminCmd("sm_ent_unwatch", Command_EntUnwatch, ADMFLAG_ROOT, "Stops watching for prop");
-	RegAdminCmd("sm_ent_watch_clear", Command_EntWatchClear, ADMFLAG_ROOT, "Clears all watched props");
-	RegAdminCmd("sm_ent_watch_list", Command_EntWatchList, ADMFLAG_ROOT, "List all props being watched");
+	RegAdminCmd(EU_CMD_SELECTED, Command_EntSelected, ADMFLAG_ROOT, "Prints generic information about selected entity");
+	RegAdminCmd(EU_CMD_SELECT, Command_EntSelect, ADMFLAG_ROOT, "Select an entity at aim (Selects by name if argument is passed)");
+	RegAdminCmd(EU_CMD_SELECT_INDEX, Command_EntSelectIndex, ADMFLAG_ROOT, "Select an entity by entity index");
+	RegAdminCmd(EU_CMD_SELECT_REF, Command_EntSelectRef, ADMFLAG_ROOT, "Select an entity by entity reference");
+	RegAdminCmd(EU_CMD_SELECT_SELF, Command_EntSelectSelf, ADMFLAG_ROOT, "Select your player");
+	RegAdminCmd(EU_CMD_SELECT_WORLD, Command_EntSelectWorld, ADMFLAG_ROOT, "Select the world (Entity 0)");
 	
-	RegAdminCmd("sm_ent_setprop", Command_EntSetProp, ADMFLAG_ROOT, "Set property of an entity");
-	RegAdminCmd("sm_ent_getprop", Command_EntGetProp, ADMFLAG_ROOT, "Print property of an entity");
+	RegAdminCmd(EU_CMD_WATCH, Command_EntWatch, ADMFLAG_ROOT, "Prints to chat when prop passed by argument changes");
+	RegAdminCmd(EU_CMD_UNWATCH, Command_EntUnwatch, ADMFLAG_ROOT, "Stops watching for prop");
+	RegAdminCmd(EU_CMD_WATCH_CLEAR, Command_EntWatchClear, ADMFLAG_ROOT, "Clears all watched props");
+	RegAdminCmd(EU_CMD_WATCH_LIST, Command_EntWatchList, ADMFLAG_ROOT, "List all props being watched");
+	
+	RegAdminCmd(EU_CMD_SET_PROP, Command_EntSetProp, ADMFLAG_ROOT, "Set property of an entity");
+	RegAdminCmd(EU_CMD_GET_PROP, Command_EntGetProp, ADMFLAG_ROOT, "Print property of an entity");
 
-	RegAdminCmd("sm_ent_killall", Command_KillAll, ADMFLAG_ROOT, "Kills all entities spawned by players");
-	RegAdminCmd("sm_ent_killmy", Command_KillMy, ADMFLAG_ROOT, "Kills entities spawned by player using this command");
-	RegAdminCmd("sm_ent_killunowned", Command_KillUnowned, ADMFLAG_ROOT, "Kills entities spawned by players that disconnected");
+	RegAdminCmd(EU_CMD_KILL_ALL, Command_KillAll, ADMFLAG_ROOT, "Kills all entities spawned by players");
+	RegAdminCmd(EU_CMD_KILL_MY, Command_KillMy, ADMFLAG_ROOT, "Kills entities spawned by player using this command");
+	RegAdminCmd(EU_CMD_KILL_UNOWNED, Command_KillUnowned, ADMFLAG_ROOT, "Kills entities spawned by players that disconnected");
 	
-	RegAdminCmd("sm_ent_list", Command_EntList, ADMFLAG_ROOT, "Lists all entities owned by a client");
-	
-	RegAdminCmd("sm_ent_count", Command_EntCount, ADMFLAG_ROOT, "Prints amount of existing entities with classname passed as arg");
+	RegAdminCmd(EU_CMD_LIST, Command_EntList, ADMFLAG_ROOT, "Lists all entities owned by a client");
+	RegAdminCmd(EU_CMD_COUNT, Command_EntCount, ADMFLAG_ROOT, "Prints amount of existing entities with classname passed as arg");
 	
 	Format(g_szVariantString, sizeof(g_szVariantString), EU_INVALID_VARIANT);
 	
@@ -118,18 +161,518 @@ public void OnPluginStart()
 		if(IsValidClient(i))
 			OnClientPutInServer(i);
 	}
+	
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), "configs/entityutilities.cfg");
+	g_hScripts = new KeyValues("Scripts");
+	g_hScripts.ImportFromFile(path);
 }
 
+/************/
+/* COMMANDS */
+/************/
 public Action Command_EntCreate(int client, int args)
 {
 	ReplySource replySource = GetCmdReplySource();
 	
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+
+	CMDEntCreate(client, arg, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSpawn(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntSpawn(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntKeyValue(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65], arg2[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	GetCmdArg(2, arg2, sizeof(arg2));
+	
+	CMDEntKeyValue(client, arg, arg2, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntKeyValueFloat(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65], arg2[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	GetCmdArg(2, arg2, sizeof(arg2));
+	
+	float value = StringToFloat(arg2);
+	CMDEntKeyValueFloat(client, arg, value, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntKeyValueVector(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65], arg2[65], arg3[65], arg4[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	GetCmdArg(2, arg2, sizeof(arg2));
+	GetCmdArg(3, arg3, sizeof(arg3));
+	GetCmdArg(4, arg4, sizeof(arg4));
+	
+	float value[3];
+	value[0] = StringToFloat(arg2);
+	value[1] = StringToFloat(arg3);
+	value[2] = StringToFloat(arg4);
+	
+	CMDEntKeyValueVector(client, arg, value, args, replySource);
+	
+	return Plugin_Handled;
+}
+
+public Action Command_EntInput(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65], arg2[65], arg3[65], arg4[65];
+	
+	Format(arg2, sizeof(arg2), "%d", INVALID_ENT_REFERENCE);
+	Format(arg3, sizeof(arg3), "%d", INVALID_ENT_REFERENCE);
+	Format(arg4, sizeof(arg4), "%d", 0);
+	
+	GetCmdArg(1, arg, sizeof(arg));
+	if(args > 1)
+		GetCmdArg(2, arg2, sizeof(arg2));
+	if(args > 2)
+		GetCmdArg(3, arg3, sizeof(arg3));
+	if(args > 3)
+		GetCmdArg(4, arg4, sizeof(arg4));
+	
+	int activator = StringToInt(arg2);
+	int caller = StringToInt(arg3);
+	int outputid = StringToInt(arg4);
+	CMDEntInput(client, arg, activator, caller, outputid, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntScript(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char script[65];
+	GetCmdArg(1, script, sizeof(script));
+	
+	CMDEntScript(client, script, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntScriptReload(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntScriptReload(client, args, replySource);	
+	return Plugin_Handled;
+}
+
+public Action Command_EntVariant(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+
+	char arg[65];
+	GetCmdArgString(arg, sizeof(arg));
+	
+	CMDEntVariant(client, arg, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntVariantClear(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntVariantClear(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntPosition(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65], arg2[65], arg3[65];
+	float value[3];
+	
+	if(args == 3)
+	{
+		GetCmdArg(1, arg, sizeof(arg));
+		GetCmdArg(2, arg2, sizeof(arg2));
+		GetCmdArg(3, arg3, sizeof(arg3));
+
+		value[0] = StringToFloat(arg);
+		value[1] = StringToFloat(arg2);
+		value[2] = StringToFloat(arg3);
+	}
+	
+	CMDEntPosition(client, value, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntAngles(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	char arg[65], arg2[65], arg3[65];
+	float value[3];
+	if(args == 3)
+	{
+		GetCmdArg(1, arg, sizeof(arg));
+		GetCmdArg(2, arg2, sizeof(arg2));
+		GetCmdArg(3, arg3, sizeof(arg3));
+	
+		value[0] = StringToFloat(arg);
+		value[1] = StringToFloat(arg2);
+		value[2] = StringToFloat(arg3);
+	}
+	CMDEntAngles(client, value, args, replySource);
+
+	return Plugin_Handled;
+}
+
+public Action Command_EntVelocity(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+
+	char arg[65], arg2[65], arg3[65];
+	
+	GetCmdArg(1, arg, sizeof(arg));
+	GetCmdArg(2, arg2, sizeof(arg2));
+	GetCmdArg(3, arg3, sizeof(arg3));
+	
+	float value[3];
+	value[0] = StringToFloat(arg);
+	value[1] = StringToFloat(arg2);
+	value[2] = StringToFloat(arg3);
+	CMDEntVelocity(client, value, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelect(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+		
+	CMDEntSelect(client, arg, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelected(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntSelected(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelectIndex(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	
+	int entity = StringToInt(arg);
+	CMDEntSelectIndex(client, entity, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelectRef(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	
+	int ref = StringToInt(arg);
+	
+	CMDEntSelectRef(client, ref, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelectSelf(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntSelectSelf(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSelectWorld(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntSelectWorld(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntWatch(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char prop[65], szSize[65], szElement[65];
+	GetCmdArg(1, prop, sizeof(prop));
+	
+	int size = 4;
+	int element = 0;
+	
+	if(args > 1) 
+	{
+		GetCmdArg(2, szSize, sizeof(szSize));
+		size = StringToInt(szSize);
+	}
+	
+	if(args > 2) 
+	{
+		GetCmdArg(3, szElement, sizeof(szElement));
+		element = StringToInt(szElement);
+	}
+	
+	CMDEntWatch(client, prop, size, element, args, replySource);
+	
+	return Plugin_Handled;
+}
+
+public Action Command_EntUnwatch(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char prop[65], szSize[65], szElement[65];
+	GetCmdArg(1, prop, sizeof(prop));
+	
+	int size = 4;
+	int element = 0;
+	
+	if(args > 1)
+	{
+		GetCmdArg(2, szSize, sizeof(szSize));
+		size = StringToInt(szSize);
+	}
+	
+	if(args > 2) 
+	{
+		GetCmdArg(3, szElement, sizeof(szElement));
+		element = StringToInt(szElement);
+	}
+	
+	CMDEntUnwatch(client, prop, size, element, args, replySource);
+	
+	return Plugin_Handled;
+}
+
+public Action Command_EntWatchClear(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntWatchClear(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntWatchList(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDEntWatchList(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntSetProp(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	char prop[65], szValue1[65], szValue2[65], szValue3[65], szSize[65], szElement[65];
+	int size = 4;
+	int element = 0;
+	
+	bool send = false;
+	bool data = false;
+	
+	GetCmdArg(1, prop, sizeof(prop));
+	
+	PropFieldType sendFieldType = PropField_Unsupported;
+	PropFieldType dataFieldType = PropField_Unsupported;
+	PropFieldType finalFieldType = PropField_Unsupported;
+	
+	char className[PLATFORM_MAX_PATH];
+	GetEntityClassname(entity, className, sizeof(className));
+	
+	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+		send = true;
+		
+	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
+		data = true;
+	
+	if(!send && !data)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Could not find prop '\x04%s\x09'", EU_PREFIX, prop);
+		ReplyToCommandColor(client, message, replySource);
+		return Plugin_Handled;
+	}
+	
+	finalFieldType = view_as<PropFieldType>(max(view_as<int>(sendFieldType), view_as<int>(dataFieldType)));
+	if(finalFieldType == PropField_Vector)
+	{
+		if(args < 4 || args > 6)
+		{
+			char message[256];
+			Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property> <value1> <value2> <value3> <size=4> <element=0>", EU_PREFIX);
+			ReplyToCommandColor(client, message, replySource);
+			return Plugin_Handled;
+		}
+		
+		if(args > 4)
+		{
+			GetCmdArg(5, szSize, sizeof(szSize));
+			size = StringToInt(szSize);
+		}
+		
+		if(args > 5)
+		{
+			GetCmdArg(6, szElement, sizeof(szElement));
+			element = StringToInt(szElement);
+		}
+		
+		GetCmdArg(2, szValue1, sizeof(szValue1));
+		GetCmdArg(3, szValue2, sizeof(szValue2));
+		GetCmdArg(4, szValue3, sizeof(szValue3));
+		
+		CMDEntSetProp(client, prop, szValue1, szValue2, szValue3, size, element, args, replySource);
+	}
+	else
+	{
+		if(args < 2 || args > 4)
+		{
+			char message[256];
+			Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property> <value> <size=4> <element=0>", EU_PREFIX);
+			ReplyToCommandColor(client, message, replySource);
+			return Plugin_Handled;
+		}
+		
+		if(args > 2)
+		{
+			GetCmdArg(3, szSize, sizeof(szSize));
+			size = StringToInt(szSize);
+		}
+		
+		if(args > 3)
+		{
+			GetCmdArg(4, szElement, sizeof(szElement));
+			element = StringToInt(szElement);
+		}
+		
+		GetCmdArg(2, szValue1, sizeof(szValue1));
+		
+		CMDEntSetProp(client, prop, szValue1, szValue2, szValue3, size, element, args, replySource);
+	}
+	
+	return Plugin_Handled;
+}
+
+public Action Command_EntGetProp(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	int size = 4;
+	int element = 0;
+	
+	char prop[65], szSize[65], szElement[65];
+	GetCmdArg(1, prop, sizeof(prop));
+	if(args > 1) 
+	{
+		GetCmdArg(2, szSize, sizeof(szSize));
+		size = StringToInt(szSize);
+	}
+	if(args > 2) 
+	{
+		GetCmdArg(3, szElement, sizeof(szElement));
+		element = StringToInt(szElement);
+	}
+	
+	CMDEntGetProp(client, prop, size, element, args, replySource);
+
+	return Plugin_Handled;
+}
+
+public Action Command_KillAll(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDKillAll(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_KillMy(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDKillMy(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_KillUnowned(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	CMDKillUnowned(client, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntCount(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	
+	CMDEntCount(client, arg, args, replySource);
+	return Plugin_Handled;
+}
+
+public Action Command_EntList(int client, int args)
+{
+	ReplySource replySource = GetCmdReplySource();
+	
+	char arg[65];
+	GetCmdArg(1, arg, sizeof(arg));
+	
+	CMDEntList(client, arg, args, replySource);
+
+	return Plugin_Handled;
+}
+
+/*********/
+/* OTHER */
+/*********/
+public bool TraceFilterNotSelf(int entityhit, int mask, any entity)
+{
+	if(entity == 0 && entityhit != entity)
+		return true;
+	
+	return false;
+}
+
+/******************/
+/* STOCK COMMANDS */
+/******************/
+
+stock void CMDEntCreate(int client, const char[] classname, int args, ReplySource replySource)
+{
 	if(args == 0)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_create <classname>", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	if(g_hEntities[client].Length >= EU_MAX_ENT)
@@ -137,19 +680,16 @@ public Action Command_EntCreate(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Exceeded max entity limit per player (\x04%d\x09)", EU_PREFIX, EU_MAX_ENT);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
-	char arg[65];
-	GetCmdArg(1, arg, sizeof(arg));
-
-	int entity = CreateEntityByName(arg);
+	int entity = CreateEntityByName(classname);
 	if(entity <= INVALID_ENT_REFERENCE)
 	{
 		char message[256];
-		Format(message, sizeof(message), "%s Could not spawn entity '\x04%s\x09'", EU_PREFIX, arg);
+		Format(message, sizeof(message), "%s Could not spawn entity '\x04%s\x09'", EU_PREFIX, classname);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	int ref = EntIndexToEntRef(entity);
 	g_hEntities[client].Push(ref);
@@ -164,26 +704,123 @@ public Action Command_EntCreate(int client, int args)
 	DispatchKeyValue(entity, "targetname", string);
 
 	char message[256];
-	Format(message, sizeof(message), "%s Entity '\x04%s\x09' created!", EU_PREFIX, arg);
+	Format(message, sizeof(message), "%s Entity '\x04%s\x09' created!", EU_PREFIX, classname);
 	ReplyToCommandColor(client, message, replySource);
 	
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-stock void GetClientAuthIdEx(int client, AuthIdType type, char[] buff, int size)
+stock void CMDEntKeyValue(int client, const char[] key, const char[] value, int args, ReplySource replySource)
 {
-	if(IsValidClient(client))
-		GetClientAuthId(client, type, buff, size);
-	else if(client == 0)
-		Format(buff, size, "server");
-}
-
-public Action Command_EntSpawn(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
+	if(args != 2)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvalue <keyname> <value>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
 	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	int ref = EntIndexToEntRef(entity);
+
+	char className[PLATFORM_MAX_PATH];
+	GetEntityClassname(entity, className, sizeof(className));
+	
+	if(StrEqual(key, "model", false))
+	{
+		if(!IsModelPrecached(value))
+			PrecacheModel(value);
+	}
+	
+	DispatchKeyValue(entity, key, value);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to '\x0C%s\x09'", EU_PREFIX, key, value);
+	ReplyToCommandColor(client, message, replySource);
+	PrintString(client, "Entity", className, replySource);
+	PrintInt(client, "Entity Index", entity, replySource);
+	PrintInt(client, "Entity Reference", ref, replySource);
+}
+
+stock void CMDEntKeyValueFloat(int client, const char[] key, float value, int args, ReplySource replySource)
+{
+	if(args != 2)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvaluefloat <keyname> <value>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	int ref = EntIndexToEntRef(entity);
+	
+	char className[PLATFORM_MAX_PATH];
+	GetEntityClassname(entity, className, sizeof(className));
+	
+	DispatchKeyValueFloat(entity, key, value);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to '\x0C%f\x09'", EU_PREFIX, key, value);
+	ReplyToCommandColor(client, message, replySource);
+
+	PrintString(client, "Entity", className, replySource);
+	PrintInt(client, "Entity Index", entity, replySource);
+	PrintInt(client, "Entity Reference", ref, replySource);
+}
+
+stock void CMDEntKeyValueVector(int client, const char[] key, float value[3], int args, ReplySource replySource)
+{
+	if(args != 4)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvaluevector <keyname> <value1> <value2> <value3>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	int entity = INVALID_ENT_REFERENCE;
+	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	int ref = EntIndexToEntRef(entity);
+
+	char className[PLATFORM_MAX_PATH];
+	GetEntityClassname(entity, className, sizeof(className));
+	
+	DispatchKeyValueVector(entity, key, value);
+	
+	char message[256];
+	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to:", EU_PREFIX, key);
+	ReplyToCommandColor(client, message, replySource);
+	PrintVector(client, key, "X", "Y", "Z", value, replySource);
+	ReplyToCommandColor(client, " ", replySource);
+	PrintString(client, "Entity", className, replySource);
+	PrintInt(client, "Entity Index", entity, replySource);
+	PrintInt(client, "Entity Reference", ref, replySource);
+}
+
+stock void CMDEntSpawn(int client, int args, ReplySource replySource)
+{
 	float traceendPos[3], eyeAngles[3], eyePos[3];
 	if(IsValidClient(client))
 	{
@@ -209,7 +846,7 @@ public Action Command_EntSpawn(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	int ref = EntIndexToEntRef(entity);
 	DispatchSpawn(entity);
@@ -226,154 +863,16 @@ public Action Command_EntSpawn(int client, int args)
 	PrintString(client, "Entity", className, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntKeyValue(int client, int args)
+stock void CMDEntInput(int client, const char[] input, int activator, int caller, int outputid, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
-	if(args != 2)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvalue <keyname> <value>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	
-	int entity = INVALID_ENT_REFERENCE;
-	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	int ref = EntIndexToEntRef(entity);
-	char arg[65], arg2[65];
-	GetCmdArg(1, arg, sizeof(arg));
-	GetCmdArg(2, arg2, sizeof(arg2));
-	
-	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
-	
-	if(StrEqual(arg, "model", false))
-	{
-		if(!IsModelPrecached(arg2))
-			PrecacheModel(arg2);
-	}
-	
-	DispatchKeyValue(entity, arg, arg2);
-	
-	char message[256];
-	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to '\x0C%s\x09'", EU_PREFIX, arg, arg2);
-	ReplyToCommandColor(client, message, replySource);
-	PrintString(client, "Entity", className, replySource);
-	PrintInt(client, "Entity Index", entity, replySource);
-	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
-}
-
-public Action Command_EntKeyValueFloat(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
-	if(args != 2)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvaluefloat <keyname> <value>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	
-	int entity = INVALID_ENT_REFERENCE;
-	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	int ref = EntIndexToEntRef(entity);
-	char arg[65], arg2[65];
-	GetCmdArg(1, arg, sizeof(arg));
-	GetCmdArg(2, arg2, sizeof(arg2));
-	
-	float value = StringToFloat(arg2);
-	
-	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
-	
-	DispatchKeyValueFloat(entity, arg, value);
-	
-	char message[256];
-	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to '\x0C%f\x09'", EU_PREFIX, arg, value);
-	ReplyToCommandColor(client, message, replySource);
-
-	PrintString(client, "Entity", className, replySource);
-	PrintInt(client, "Entity Index", entity, replySource);
-	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
-}
-
-public Action Command_EntKeyValueVector(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
-	if(args != 4)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Usage \x04sm_ent_keyvaluevector <keyname> <value1> <value2> <value3>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	
-	int entity = INVALID_ENT_REFERENCE;
-	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	int ref = EntIndexToEntRef(entity);
-	char arg[65], arg2[65], arg3[65], arg4[65];
-	GetCmdArg(1, arg, sizeof(arg));
-	GetCmdArg(2, arg2, sizeof(arg2));
-	GetCmdArg(3, arg3, sizeof(arg3));
-	GetCmdArg(4, arg4, sizeof(arg4));
-	
-	float value[3];
-	value[0] = StringToFloat(arg2);
-	value[1] = StringToFloat(arg3);
-	value[2] = StringToFloat(arg4);
-	
-	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
-	
-	DispatchKeyValueVector(entity, arg, value);
-	
-	char message[256];
-	Format(message, sizeof(message), "%s Set keyvalue '\x0C%s\x09' to:", EU_PREFIX, arg);
-	ReplyToCommandColor(client, message, replySource);
-	PrintVector(client, arg, "X", "Y", "Z", value, replySource);
-	ReplyToCommandColor(client, " ", replySource);
-	PrintString(client, "Entity", className, replySource);
-	PrintInt(client, "Entity Index", entity, replySource);
-	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
-}
-
-public Action Command_EntInput(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
 	if(args < 1 || args > 4)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_input <input> <activator> <caller> <outputid>", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int entity = INVALID_ENT_REFERENCE;
@@ -382,27 +881,9 @@ public Action Command_EntInput(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	int ref = EntIndexToEntRef(entity);
-	char arg[65], arg2[65], arg3[65], arg4[65];
-	
-	Format(arg2, sizeof(arg2), "%d", INVALID_ENT_REFERENCE);
-	Format(arg3, sizeof(arg3), "%d", INVALID_ENT_REFERENCE);
-	Format(arg4, sizeof(arg4), "%d", 0);
-	
-	GetCmdArg(1, arg, sizeof(arg));
-	if(args > 1)
-		GetCmdArg(2, arg2, sizeof(arg2));
-	if(args > 2)
-		GetCmdArg(3, arg3, sizeof(arg3));
-	if(args > 3)
-		GetCmdArg(4, arg4, sizeof(arg4));
-	
-	int activator = StringToInt(arg2);
-	int caller = StringToInt(arg3);
-	int outputid = StringToInt(arg4);
-	
 	
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
@@ -410,10 +891,10 @@ public Action Command_EntInput(int client, int args)
 	if(!StrEqual(g_szVariantString, EU_INVALID_VARIANT, false))
 		SetVariantString(g_szVariantString);
 		
-	AcceptEntityInput(entity, arg, activator, caller, outputid);
+	AcceptEntityInput(entity, input, activator, caller, outputid);
 	
 	char message[256];
-	Format(message, sizeof(message), "%s Input '\x0C%s\x09' called", EU_PREFIX, arg);
+	Format(message, sizeof(message), "%s Input '\x0C%s\x09' called", EU_PREFIX, input);
 	ReplyToCommandColor(client, message, replySource);
 		
 	PrintString(client, "Entity", className, replySource);
@@ -422,62 +903,286 @@ public Action Command_EntInput(int client, int args)
 	PrintInt(client, "Output ID", outputid, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntVariant(int client, int args)
+stock void CMDEntScript(int client, const char[] script, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-
-	char arg[65];
-	GetCmdArgString(arg, sizeof(arg));
+	if(args != 1)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_script <script>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
 	
-	if(args == 0)
+	g_hScripts.Rewind();
+	if(g_hScripts.JumpToKey(script))
+	{
+		
+		int counter = 1;
+		char command[PLATFORM_MAX_PATH], szReplySource[16];
+		g_hScripts.GetString("replysource", szReplySource, sizeof(szReplySource), "chat");
+		
+		while(!StrEqual(command, "STOP", false))
+		{
+			char szCounter[16];
+			IntToString(counter++, szCounter, sizeof(szCounter));
+			g_hScripts.GetString(szCounter, command, sizeof(command), "STOP");
+			if(!StrEqual(command, "STOP", false)) //confused
+			{
+				char commandArguments[8][PLATFORM_MAX_PATH];
+   			 	ExplodeString(command, " ", commandArguments, sizeof(commandArguments), sizeof(commandArguments[]));
+  				int argCount = GetStringCount(commandArguments, 8) - 1;
+  				
+	 			if(StrEqual(commandArguments[0], EU_CMD_CREATE_ENTITY, false))				//sm_ent_create <classname(string>
+	 			{
+					if(argCount == 1) 
+					{
+						CMDEntCreate(client, commandArguments[1], argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE, false))				//sm_ent_keyvalue <key(string> <value(string)>
+	 			{
+					if(argCount == 2) 
+					{
+						CMDEntKeyValue(client, commandArguments[1], commandArguments[2], argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_FLOAT, false))		//sm_ent_keyvaluefloat <key(string> <value(float)>
+	 			{
+					if(argCount == 2) 
+					{
+						CMDEntKeyValueFloat(client, commandArguments[1], StringToFloat(commandArguments[2]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KEYVALUE_VECTOR, false))		//sm_ent_keyvaluevector <key(string)> <value1(float)> <value2(float)> <value3(float)>
+	 			{
+					if(argCount == 4) 
+					{
+						float vec[3];
+						vec[0] = StringToFloat(commandArguments[2]);
+						vec[1] = StringToFloat(commandArguments[3]);
+						vec[2] = StringToFloat(commandArguments[4]);
+						CMDEntKeyValueVector(client, commandArguments[1], vec, argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SPAWN, false))					//sm_ent_spawn
+	 			{
+					CMDEntSpawn(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_VARIANT, false))				//sm_ent_variant <variant(string)[optional]>
+	 			{
+					CMDEntVariant(client, commandArguments[1], argCount, replySource);	
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_VARIANT_CLEAR, false))			//sm_ent_variant_clear
+	 			{
+					CMDEntVariantClear(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_INPUT, false))					//sm_ent_input <input(string)> <activator(int)[optional]> <caller(int)[optional]> <outputid(int)[optional]> 
+	 			{
+					if(argCount > 0 && argCount < 5) 
+					{
+						CMDEntInput(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), StringToInt(commandArguments[4]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT, false))				//sm_ent_script <script(string)>
+	 			{
+					if(argCount == 1)
+					{
+						CMDEntScript(client, commandArguments[1], argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SCRIPT_RELOAD, false))			//sm_ent_script_reload
+	 			{
+	 				CMDEntScriptReload(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_POSITION, false))				//sm_ent_position <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
+	 			{
+					float vec[3];
+					vec[0] = StringToFloat(commandArguments[1]);
+					vec[1] = StringToFloat(commandArguments[2]);
+					vec[2] = StringToFloat(commandArguments[3]);
+					CMDEntPosition(client, vec, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_ANGLES, false))				//sm_ent_angles <value1(float)[optional]> <value2(float)[optional]> <value3(float)[optional]>
+	 			{
+	 				float vec[3];
+					vec[0] = StringToFloat(commandArguments[1]);
+					vec[1] = StringToFloat(commandArguments[2]);
+					vec[2] = StringToFloat(commandArguments[3]);
+					CMDEntAngles(client, vec, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_VELOCITY, false))				//sm_ent_velocity <value1(float)> <value2(float)> <value3(float)>
+	 			{
+	 				if(argCount == 3)
+					{
+						float vec[3];
+						vec[0] = StringToFloat(commandArguments[1]);
+						vec[1] = StringToFloat(commandArguments[2]);
+						vec[2] = StringToFloat(commandArguments[3]);
+						CMDEntVelocity(client, vec, argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECTED, false))				//sm_ent_selected
+	 			{
+	 				CMDEntSelected(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT, false))				//sm_ent_select <name(string)[optional]>
+	 			{
+	 				CMDEntSelect(client, commandArguments[1], argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_INDEX, false))			//sm_ent_select_index <index(int)>
+	 			{
+	 				if(argCount == 1) 
+					{
+						CMDEntSelectIndex(client, StringToInt(commandArguments[1]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_REF, false))			//sm_ent_select_ref <reference(int)>
+	 			{
+	 				if(argCount == 1)
+					{
+						CMDEntSelectRef(client, StringToInt(commandArguments[1]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_SELF, false))			//sm_ent_select_self
+	 			{
+					CMDEntSelectSelf(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SELECT_WORLD, false))			//sm_ent_select_world
+	 			{
+					CMDEntSelectWorld(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_WATCH, false))					//sm_ent_watch <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	 			{
+	 				if(argCount > 0 && argCount < 4)
+					{
+						CMDEntWatch(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_UNWATCH, false))				//sm_ent_unwatch <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	 			{
+	 				if(argCount > 0 && argCount < 4)
+					{
+						CMDEntUnwatch(client, commandArguments[1], StringToInt(commandArguments[2]), StringToInt(commandArguments[3]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_WATCH_CLEAR, false))			//sm_ent_watch_clear
+	 			{
+	 				CMDEntWatchClear(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_WATCH_LIST, false))			//sm_ent_watch_list
+	 			{
+	 				CMDEntWatchList(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_SET_PROP, false))				//sm_ent_setprop <prop(string)> <value1(any)> <value2(float)[optional]> <value3(float)[optional]> <size(int)[optional]> <element(int)[optional]>
+	 			{
+	 				if(argCount > 0 && argCount < 7)
+					{
+						CMDEntSetProp(client, commandArguments[1], commandArguments[2], commandArguments[3], commandArguments[4], StringToInt(commandArguments[5]), StringToInt(commandArguments[6]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_GET_PROP, false))				//sm_ent_getprop <prop(string)> <size(int)[optional]> <element(int)[optional]>
+	 			{
+	 				if(argCount > 0 && argCount < 4)
+					{
+						CMDEntGetProp(client, commandArguments[1], StringToInt(commandArguments[1]), StringToInt(commandArguments[1]), argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KILL_ALL, false))				//sm_ent_killall
+	 			{
+					CMDKillAll(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KILL_MY, false))				//sm_ent_killmy
+	 			{
+					CMDKillMy(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_KILL_UNOWNED, false))			//sm_ent_killunowned
+	 			{
+					CMDKillUnowned(client, argCount, replySource);
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_LIST, false))					//sm_ent_list <#userid(int)|name(string)>
+	 			{
+					if(argCount == 1)
+					{
+						CMDEntList(client, commandArguments[1], argCount, replySource);
+					}
+	 			}
+	 			else if(StrEqual(commandArguments[0], EU_CMD_COUNT, false))					//sm_ent_count <classname>
+	 			{
+					if(argCount == 1)
+					{
+						CMDEntCount(client, commandArguments[1], argCount, replySource);
+					}
+	 			}
+			}
+		}
+		
+		char message[256];
+		Format(message, sizeof(message), "%s Script '\x04%s\x09' executed", EU_PREFIX, script);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}	
+
+	char message[256];
+	Format(message, sizeof(message), "%s Script '\x04%s\x09' could not be found", EU_PREFIX, script);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntScriptReload(int client, int args, ReplySource replySource)
+{
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), "configs/entityutilities.cfg");
+	g_hScripts = new KeyValues("Scripts");
+	g_hScripts.ImportFromFile(path);
+
+	char message[256];
+	Format(message, sizeof(message), "%s Scripts reloaded!", EU_PREFIX);
+	ReplyToCommandColor(client, message, replySource);
+}
+
+stock void CMDEntVariant(int client, const char[] value, int args, ReplySource replySource)
+{
+	if(StrEqual(value, "", false))
 	{
 		if(StrEqual(g_szVariantString, EU_INVALID_VARIANT, false))
 		{
 			char message[256];
 			Format(message, sizeof(message), "%s Variant string is not set", EU_PREFIX, g_szVariantString);
 			ReplyToCommandColor(client, message, replySource);
-			return Plugin_Handled;
+			return;
 		}
 		char message[256];
 		Format(message, sizeof(message), "%s Current variant string: '\x04%s\x09'", EU_PREFIX, g_szVariantString);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
-	Format(g_szVariantString, sizeof(g_szVariantString), arg);
-
+	Format(g_szVariantString, sizeof(g_szVariantString), value);
+	
 	char message[256];
-	Format(message, sizeof(message), "%s '\x04%s\x09' will now be set before every \x04sm_ent_input \x09call", EU_PREFIX, arg);
+	Format(message, sizeof(message), "%s '\x04%s\x09' will now be set before every \x04sm_ent_input \x09call", EU_PREFIX, value);
 	ReplyToCommandColor(client, message, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntVariantClear(int client, int args)
+stock void CMDEntVariantClear(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-
 	Format(g_szVariantString, sizeof(g_szVariantString), EU_INVALID_VARIANT);
 	
 	char message[256];
 	Format(message, sizeof(message), "%s Variant string will no longer be set", EU_PREFIX);
 	ReplyToCommandColor(client, message, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntPosition(int client, int args)
+stock void CMDEntPosition(int client, float pos[3], int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int ref = EntIndexToEntRef(entity);
@@ -486,28 +1191,17 @@ public Action Command_EntPosition(int client, int args)
 	
 	if(args == 3)
 	{
-		char arg[65], arg2[65], arg3[65];
-		
-		GetCmdArg(1, arg, sizeof(arg));
-		GetCmdArg(2, arg2, sizeof(arg2));
-		GetCmdArg(3, arg3, sizeof(arg3));
-		
-		float value[3];
-		value[0] = StringToFloat(arg);
-		value[1] = StringToFloat(arg2);
-		value[2] = StringToFloat(arg3);
-		
-		TeleportEntity(entity, value, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(entity, pos, NULL_VECTOR, NULL_VECTOR);
 		
 		char message[256];
 		Format(message, sizeof(message), "%s Set position to:", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		PrintVector(client, "Position", "X", "Y", "Z", value, replySource);
+		PrintVector(client, "Position", "X", "Y", "Z", pos, replySource);
 		ReplyToCommandColor(client, " ", replySource);
 		PrintString(client, "Entity", className, replySource);
 		PrintInt(client, "Entity Index", entity, replySource);
 		PrintInt(client, "Entity Reference", ref, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	float traceendPos[3], eyeAngles[3], eyePos[3];
@@ -530,20 +1224,17 @@ public Action Command_EntPosition(int client, int args)
 	PrintString(client, "Entity", className, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntAngles(int client, int args)
+stock void CMDEntAngles(int client, float angles[3], int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int ref = EntIndexToEntRef(entity);
@@ -552,28 +1243,17 @@ public Action Command_EntAngles(int client, int args)
 	
 	if(args == 3)
 	{
-		char arg[65], arg2[65], arg3[65];
-		
-		GetCmdArg(1, arg, sizeof(arg));
-		GetCmdArg(2, arg2, sizeof(arg2));
-		GetCmdArg(3, arg3, sizeof(arg3));
-		
-		float value[3];
-		value[0] = StringToFloat(arg);
-		value[1] = StringToFloat(arg2);
-		value[2] = StringToFloat(arg3);
-		
-		TeleportEntity(entity, NULL_VECTOR, value, NULL_VECTOR);
+		TeleportEntity(entity, NULL_VECTOR, angles, NULL_VECTOR);
 		
 		char message[256];
 		Format(message, sizeof(message), "%s Set angles to:", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		PrintVector(client, "Angles", "X", "Y", "Z", value, replySource);
+		PrintVector(client, "Angles", "X", "Y", "Z", angles, replySource);
 		ReplyToCommandColor(client, " ", replySource);
 		PrintString(client, "Entity", className, replySource);
 		PrintInt(client, "Entity Index", entity, replySource);
 		PrintInt(client, "Entity Reference", ref, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	float eyeAngles[3];
@@ -589,19 +1269,16 @@ public Action Command_EntAngles(int client, int args)
 	PrintString(client, "Entity", className, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntVelocity(int client, int args)
+stock void CMDEntVelocity(int client, float vel[3], int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	if(args != 3)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_velocity <value1> <value2> <value3>", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int entity = INVALID_ENT_REFERENCE;
@@ -610,45 +1287,29 @@ public Action Command_EntVelocity(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int ref = EntIndexToEntRef(entity);
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
 
-	char arg[65], arg2[65], arg3[65];
-	
-	GetCmdArg(1, arg, sizeof(arg));
-	GetCmdArg(2, arg2, sizeof(arg2));
-	GetCmdArg(3, arg3, sizeof(arg3));
-	
-	float value[3];
-	value[0] = StringToFloat(arg);
-	value[1] = StringToFloat(arg2);
-	value[2] = StringToFloat(arg3);
-	
-	TeleportEntity(entity, NULL_VECTOR, NULL_VECTOR, value);
+	TeleportEntity(entity, NULL_VECTOR, NULL_VECTOR, vel);
 	
 	char message[256];
 	Format(message, sizeof(message), "%s Set velocity to:", EU_PREFIX);
 	ReplyToCommandColor(client, message, replySource);
-	PrintVector(client, "Velocity", "X", "Y", "Z", value, replySource);
+	PrintVector(client, "Velocity", "X", "Y", "Z", vel, replySource);
 	ReplyToCommandColor(client, " ", replySource);
 	PrintString(client, "Entity", className, replySource);
 	PrintInt(client, "Entity Index", entity, replySource);
 	PrintInt(client, "Entity Reference", ref, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntSelect(int client, int args)
+stock void CMDEntSelect(int client, const char[] name, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	if(args == 1)
+	if(!StrEqual(name, "", false))
 	{
-		char arg[65];
-		GetCmdArg(1, arg, sizeof(arg));
-		
 		int iEnt = MAXPLAYERS + 1;
 		char targetName[32];
 		while((iEnt = FindEntityByClassname(iEnt, "*")) != -1)
@@ -657,116 +1318,80 @@ public Action Command_EntSelect(int client, int args)
 				continue;
 				
 			GetEntPropString(iEnt, Prop_Data, "m_iName", targetName, sizeof(targetName));
-			if(StrEqual(targetName, arg, false))
+			if(StrEqual(targetName, name, false))
 			{
 				SelectEntity(client, iEnt, false, replySource);
-				return Plugin_Handled;
+				return;
 			}
 		}
 		char message[256];
-		Format(message, sizeof(message), "%s Could not find an entity with name '\x04%s\x09'", EU_PREFIX, arg);
+		Format(message, sizeof(message), "%s Could not find an entity with name '\x04%s\x09'", EU_PREFIX, name);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	SelectEntity(client, GetClientAimTarget(client, false), false, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntSelected(int client, int args)
+stock void CMDEntSelectIndex(int client, int index, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
+	if(args != 1)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_select_index <index>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	SelectEntity(client, index, false, replySource);
+}
+
+stock void CMDEntSelectRef(int client, int ref, int args, ReplySource replySource)
+{
+	if(args != 1)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_select_index <index>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
+	
+	int entity = EntRefToEntIndex(ref);
+	SelectEntity(client, entity, false, replySource);
+}
+
+stock void CMDEntSelected(int client, int args, ReplySource replySource)
+{
 	PrintSelectedEntity(client, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntSelectIndex(int client, int args)
+stock void CMDEntSelectSelf(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
-	if(args != 1)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Usage \x04sm_ent_select_index <index>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	
-	char arg[65];
-	GetCmdArg(1, arg, sizeof(arg));
-	
-	int entity = StringToInt(arg);
-	
-	SelectEntity(client, entity, false, replySource);
-	return Plugin_Handled;
-}
-
-public Action Command_EntSelectRef(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
-	if(args != 1)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Usage \x04sm_ent_select_index <index>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
-	}
-	
-	char arg[65];
-	GetCmdArg(1, arg, sizeof(arg));
-	
-	int entity = EntRefToEntIndex(StringToInt(arg));
-	
-	SelectEntity(client, entity, false, replySource);
-	return Plugin_Handled;
-}
-
-public Action Command_EntSelectSelf(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
 	SelectEntity(client, client, false, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntSelectWorld(int client, int args)
+stock void CMDEntSelectWorld(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
 	SelectEntity(client, 0, true, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntWatch(int client, int args)
+stock void CMDEntWatch(int client, const char[] prop, int size, int element, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
-	
-	char prop[65], szSize[65], szElement[65];
-	GetCmdArg(1, prop, sizeof(prop));
 	
 	PropFieldType sendFieldType = PropField_Unsupported;
 	PropFieldType dataFieldType = PropField_Unsupported;
 	
 	bool send = false;
 	bool data = false;
-	
-	Format(szSize, sizeof(szSize), "%d", 4);
-	Format(szElement, sizeof(szElement), "%d", 0);
 
-	if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
-	if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-	int size = StringToInt(szSize);
-	int element = StringToInt(szElement);
-	
 	char classname[65];
 	GetEntityClassname(entity, classname, sizeof(classname));
 	
@@ -782,7 +1407,7 @@ public Action Command_EntWatch(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Could not find property", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int propIndex = FindWatchedProperty(client, prop, size, element);
@@ -791,7 +1416,7 @@ public Action Command_EntWatch(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Property '\x04%s\x09' is already being watched", EU_PREFIX, prop);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	g_hWatchedProps[client].Push(send);
@@ -914,40 +1539,24 @@ public Action Command_EntWatch(int client, int args)
 	char message[256];
 	Format(message, sizeof(message), "%s Property '\x04%s\x09' is now being watched", EU_PREFIX, prop);
 	ReplyToCommandColor(client, message, replySource);
-	
-	return Plugin_Handled;
 }
 
-public Action Command_EntUnwatch(int client, int args)
+stock void CMDEntUnwatch(int client, const char[] prop, int size, int element, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
-	
-	char prop[65], szSize[65], szElement[65];
-	GetCmdArg(1, prop, sizeof(prop));
 	
 	PropFieldType sendFieldType = PropField_Unsupported;
 	PropFieldType dataFieldType = PropField_Unsupported;
 	
 	bool send = false;
 	bool data = false;
-	
-	Format(szSize, sizeof(szSize), "%d", 4);
-	Format(szElement, sizeof(szElement), "%d", 0);
-
-	if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
-	if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-	int size = StringToInt(szSize);
-	int element = StringToInt(szElement);
 	
 	char classname[65];
 	GetEntityClassname(entity, classname, sizeof(classname));
@@ -962,7 +1571,7 @@ public Action Command_EntUnwatch(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Could not find property", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int propIndex = FindWatchedProperty(client, prop, size, element);
@@ -971,7 +1580,7 @@ public Action Command_EntUnwatch(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Property '\x04%s\x09' is not being watched", EU_PREFIX, prop);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	for (int j = ENTITY_MAX - 2; j >= 0; j--)
@@ -984,36 +1593,16 @@ public Action Command_EntUnwatch(int client, int args)
 	char message[256];
 	Format(message, sizeof(message), "%s Property '\x04%s\x09' is no longer being watched", EU_PREFIX, prop);
 	ReplyToCommandColor(client, message, replySource);
-	return Plugin_Handled;
 }
 
-stock int FindWatchedProperty(int client, const char[] prop, int size = 4, int element = 0)
+stock void CMDEntWatchClear(int client, int args, ReplySource replySource)
 {
-	for (int i = 0; i < g_hWatchedPropStrings[client].Length / 3; i++)
-	{
-		char watchedProp[PLATFORM_MAX_PATH];
-		g_hWatchedPropStrings[client].GetString(i * 3, watchedProp, sizeof(watchedProp));
-		if(	StrEqual(prop, watchedProp, false) && 
-			size == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_SIZE) && 
-			element == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_ELEMENT))
-		{
-			// Found watched prop
-			return i;
-		}
-	}
-	return EU_INVALID_PROP_INDEX;
-}
-
-public Action Command_EntWatchClear(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
 	if(g_hWatchedProps[client].Length == 0)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s You do not have any watched properties", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	char message[256];
@@ -1022,19 +1611,16 @@ public Action Command_EntWatchClear(int client, int args)
 	
 	g_hWatchedProps[client].Clear();
 	g_hWatchedPropStrings[client].Clear();
-	return Plugin_Handled;
 }
 
-public Action Command_EntWatchList(int client, int args)
+stock void CMDEntWatchList(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	if(g_hWatchedProps[client].Length == 0)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s You do not have any watched properties", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 	
 	int count = 0;
@@ -1072,496 +1658,33 @@ public Action Command_EntWatchList(int client, int args)
 	char message[256];
 	Format(message, sizeof(message), "%s Currently watching over \x04%d\x09 properties", EU_PREFIX, count);
 	ReplyToCommandColor(client, message, replySource);
-	
-	return Plugin_Handled;
 }
 
-// Returns entity index
-public int GetWatchedProp(int client, int arrIndex, char[] propBuffer, int propBufferSize, bool& propSend, bool& propData, PropFieldType& propType, int& size, int& element, ReplySource& replySource)
+stock void CMDEntSetProp(int client, const char[] prop, const char[] szValue1, const char[] szValue2, const char[] szValue3, int size, int element, int args, ReplySource replySource)
 {
-	char prop[PLATFORM_MAX_PATH];
-	g_hWatchedPropStrings[client].GetString(arrIndex*3, prop, sizeof(prop));
-	
-	Format(propBuffer, propBufferSize, prop);
-	propSend = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1));
-	propData = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROP_DATA);
-	propType = view_as<PropFieldType>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROPERTY_TYPE));
-	size = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_SIZE);
-	element = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_ELEMENT);
-	replySource = view_as<ReplySource>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REPLY_SOURCE));
-	return EntRefToEntIndex(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REFERENCE));
-}
-
-public void OnGameFrame()
-{
-	for (int client = 0; client <= MaxClients; client++)
-	{
-		for (int arrIndex = 0; arrIndex < (g_hWatchedPropStrings[client].Length / 3); arrIndex++)
-		{
-			char prop[PLATFORM_MAX_PATH];
-			bool send = false;
-			bool data = false;
-			PropFieldType propType = PropField_Unsupported;
-			int size = 4;
-			int element = 0;
-			ReplySource replySource = SM_REPLY_TO_CHAT;
-			
-			int entity = GetWatchedProp(client, arrIndex, prop, sizeof(prop), send, data, propType, size, element, replySource);
-			if(!IsValidEntity(entity))
-			{
-				for (int j = ENTITY_MAX - 2; j >= 0; j--)
-					g_hWatchedProps[client].Erase(arrIndex * (ENTITY_MAX - 1) + j);
-					
-				g_hWatchedPropStrings[client].Erase(arrIndex+2);
-				g_hWatchedPropStrings[client].Erase(arrIndex+1);
-				g_hWatchedPropStrings[client].Erase(arrIndex);
-				continue;
-			}
-			
-			if(send)
-			{
-				switch(propType)
-				{
-					case PropField_Integer:
-					{
-						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
-						int newValue = GetEntProp(entity, Prop_Send, prop, size, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
-						}
-					}
-					case PropField_Float:
-					{
-						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
-						float newValue = GetEntPropFloat(entity, Prop_Send, prop, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
-						}
-					}
-					case PropField_String:
-					{
-						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
-						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
-						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
-						if(!StrEqual(prevValue, newValue, true))
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
-							
-						}
-					}
-					case PropField_String_T:
-					{
-						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
-						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
-						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
-						if(!StrEqual(prevValue, newValue, true))
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
-							
-						}
-					}
-					case PropField_Vector:
-					{
-						float prevValue[3], newValue[3];
-						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, prevValue, sizeof(prevValue));
-						GetEntPropVector(entity, Prop_Send, prop, newValue, element);
-						if(	prevValue[0] != newValue[0] ||
-							prevValue[1] != newValue[1] ||
-							prevValue[2] != newValue[2])
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
-							ReplyToCommandColor(client, message, replySource);
-							Format(message, sizeof(message), "%s [\x03SEND\x09] [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
-							ReplyToCommandColor(client, message, replySource);
-							
-							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue, sizeof(newValue));
-						}
-					}
-					case PropField_Entity:
-					{
-						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
-						int newValue = GetEntPropEnt(entity, Prop_Send, prop, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
-						}
-					}
-				}
-			}
-			if(data)
-			{
-				switch(propType)
-				{
-					case PropField_Integer:
-					{
-						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
-						int newValue = GetEntProp(entity, Prop_Data, prop, size, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
-						}
-					}
-					case PropField_Float:
-					{
-						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
-						float newValue = GetEntPropFloat(entity, Prop_Data, prop, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
-						}
-					}
-					case PropField_String:
-					{
-						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
-						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
-						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
-						if(!StrEqual(prevValue, newValue, true))
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
-							
-						}
-					}
-					case PropField_String_T:
-					{
-						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
-						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
-
-						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
-						if(!StrEqual(prevValue, newValue, true))
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
-						}
-					}
-					case PropField_Vector:
-					{
-						float prevValue[3], newValue[3];
-						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, prevValue, sizeof(prevValue));
-						GetEntPropVector(entity, Prop_Data, prop, newValue, element);
-						if(	prevValue[0] != newValue[0] ||
-							prevValue[1] != newValue[1] ||
-							prevValue[2] != newValue[2])
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
-							ReplyToCommandColor(client, message, replySource);
-							Format(message, sizeof(message), "%s [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
-							ReplyToCommandColor(client, message, replySource);
-							
-							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue, sizeof(newValue));
-						}
-					}
-					case PropField_Entity:
-					{
-						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
-						int newValue = GetEntPropEnt(entity, Prop_Data, prop, element);
-						if(prevValue != newValue)
-						{
-							char message[256];
-							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
-							ReplyToCommandColor(client, message, replySource);
-							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-public Action Command_EntSetProp(int client, int args)
-{
-	ReplySource replySource = GetCmdReplySource();
-	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
-	
-	char prop[65], szValue1[65], szValue2[65], szValue3[65], szSize[65], szElement[65];
-	GetCmdArg(1, prop, sizeof(prop));
-	
-	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
 	
 	bool send = false;
 	bool data = false;
 	
-	int element = 0;
-	int size = 4;
-	
 	PropFieldType sendFieldType = PropField_Unsupported;
 	PropFieldType dataFieldType = PropField_Unsupported;
 	
-	Format(szSize, sizeof(szSize), "%d", 4);
-	Format(szElement, sizeof(szElement), "%d", 0);
+	char className[PLATFORM_MAX_PATH];
+	GetEntityClassname(entity, className, sizeof(className));
 	
 	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
-	{
-		switch(sendFieldType)
-		{
-			case PropField_Integer:
-			{
-				if(args < 2 || args > 4)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(int)> <value> <size=4> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szSize, sizeof(szSize));
-				if(args > 3) GetCmdArg(4, szElement, sizeof(szElement));
-				
-				size = StringToInt(szSize);
-				element = StringToInt(szElement);
-				int value = StringToInt(szValue1);
-				SetEntProp(entity, Prop_Send, prop, value, size, element);
-			}
-			case PropField_Float:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(float)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-			
-				element = StringToInt(szElement);
-				float value = StringToFloat(szValue1);
-				SetEntPropFloat(entity, Prop_Send, prop, value, element);
-			}
-			case PropField_String:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(string)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-			
-				element = StringToInt(szElement);
-				SetEntPropString(entity, Prop_Send, prop, szValue1, element);
-			}
-			case PropField_String_T:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(string)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-				element = StringToInt(szElement);
-				SetEntPropString(entity, Prop_Send, prop, szValue1, element);
-			}
-			case PropField_Vector:
-			{
-				if(args < 4 || args > 5)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(vector)> <value1> <value2> <value3> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				GetCmdArg(3, szValue2, sizeof(szValue2));
-				GetCmdArg(4, szValue3, sizeof(szValue3));
-				
-				if(args > 4) GetCmdArg(5, szElement, sizeof(szElement));
-
-				element = StringToInt(szElement);
-				float value[3];
-				value[0] = StringToFloat(szValue1);
-				value[1] = StringToFloat(szValue2);
-				value[2] = StringToFloat(szValue3);
-				SetEntPropVector(entity, Prop_Send, prop, value, element);
-			}
-			case PropField_Entity:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(entity)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-				element = StringToInt(szElement);
-				int value = StringToInt(szValue1);
-				SetEntPropEnt(entity, Prop_Send, prop, value, element);
-			}
-		}
-		
 		send = true;
-	}
-
-	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
-	{
-		switch(dataFieldType)
-		{
-			case PropField_Integer:
-			{
-				if(args < 2 || args > 4)
-				{
-					char message[256];
-					Format(message, sizeof(message), "s Usage \x04sm_ent_setprop <property(int)> <value> <size=4> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szSize, sizeof(szSize));
-				if(args > 3) GetCmdArg(4, szElement, sizeof(szElement));
-			
-				size = StringToInt(szSize);
-				element = StringToInt(szElement);
-				int value = StringToInt(szValue1);
-				SetEntProp(entity, Prop_Data, prop, value, size, element);
-			}
-			case PropField_Float:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(float)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-			
-				element = StringToInt(szElement);
-				float value = StringToFloat(szValue1);
-				SetEntPropFloat(entity, Prop_Data, prop, value, element);
-			}
-			case PropField_String:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(string)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-			
-				element = StringToInt(szElement);
-				SetEntPropString(entity, Prop_Data, prop, szValue1, element);
-			}
-			case PropField_String_T:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(string)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-	
-				element = StringToInt(szElement);
-				SetEntPropString(entity, Prop_Data, prop, szValue1, element);
-			}
-			case PropField_Vector:
-			{
-				if(args < 4 || args > 5)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(vector)> <value1> <value2> <value3> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				GetCmdArg(3, szValue2, sizeof(szValue2));
-				GetCmdArg(4, szValue3, sizeof(szValue3));
-				if(args > 4) GetCmdArg(5, szElement, sizeof(szElement));
-			
-				element = StringToInt(szElement);
-				float value[3];
-				value[0] = StringToFloat(szValue1);
-				value[1] = StringToFloat(szValue2);
-				value[2] = StringToFloat(szValue3);
-				SetEntPropVector(entity, Prop_Data, prop, value, element);
-			}
-			case PropField_Entity:
-			{
-				if(args < 2 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_setprop <property(entity)> <value> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				GetCmdArg(2, szValue1, sizeof(szValue1));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-				
-				element = StringToInt(szElement);
-				int value = StringToInt(szValue1);
-				SetEntPropEnt(entity, Prop_Data, prop, value, element);
-			}
-		}
 		
+	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
 		data = true;
-	}
 	
 	if(send)
 	{
@@ -1569,6 +1692,9 @@ public Action Command_EntSetProp(int client, int args)
 		{
 			case PropField_Integer:
 			{
+				int value = StringToInt(szValue1);
+				SetEntProp(entity, Prop_Send, prop, value, size, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1576,6 +1702,9 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Float:
 			{
+				float value = StringToFloat(szValue1);
+				SetEntPropFloat(entity, Prop_Send, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1583,6 +1712,8 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_String:
 			{
+				SetEntPropString(entity, Prop_Send, prop, szValue1, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1592,6 +1723,8 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_String_T:
 			{
+				SetEntPropString(entity, Prop_Send, prop, szValue1, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1601,6 +1734,12 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Vector:
 			{
+				float value[3];
+				value[0] = StringToFloat(szValue1);
+				value[1] = StringToFloat(szValue2);
+				value[2] = StringToFloat(szValue3);
+				SetEntPropVector(entity, Prop_Send, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1610,6 +1749,9 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Entity:
 			{
+				int value = StringToInt(szValue1);
+				SetEntPropEnt(entity, Prop_Send, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1617,12 +1759,16 @@ public Action Command_EntSetProp(int client, int args)
 			}
 		}
 	}
-	else if(data)
+
+	if(data)
 	{
 		switch(dataFieldType)
 		{
 			case PropField_Integer:
 			{
+				int value = StringToInt(szValue1);
+				SetEntProp(entity, Prop_Data, prop, value, size, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1630,6 +1776,9 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Float:
 			{
+				float value = StringToFloat(szValue1);
+				SetEntPropFloat(entity, Prop_Data, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1637,6 +1786,8 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_String:
 			{
+				SetEntPropString(entity, Prop_Data, prop, szValue1, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1646,6 +1797,8 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_String_T:
 			{
+				SetEntPropString(entity, Prop_Data, prop, szValue1, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1655,6 +1808,13 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Vector:
 			{
+
+				float value[3];
+				value[0] = StringToFloat(szValue1);
+				value[1] = StringToFloat(szValue2);
+				value[2] = StringToFloat(szValue3);
+				SetEntPropVector(entity, Prop_Data, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1664,6 +1824,9 @@ public Action Command_EntSetProp(int client, int args)
 			}
 			case PropField_Entity:
 			{
+				int value = StringToInt(szValue1);
+				SetEntPropEnt(entity, Prop_Data, prop, value, element);
+				
 				char message[256];
 				Format(message, sizeof(message), "%s Property set:", EU_PREFIX, prop);
 				ReplyToCommandColor(client, message, replySource);
@@ -1671,19 +1834,17 @@ public Action Command_EntSetProp(int client, int args)
 			}
 		}
 	}
-	else
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Could not find prop '\x04%s\x09'", EU_PREFIX, prop);
-		ReplyToCommandColor(client, message, replySource);
-	}
-	
-	return Plugin_Handled;
 }
 
-public Action Command_EntGetProp(int client, int args)
+stock void CMDEntGetProp(int client, const char[] prop, int size, int element, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
+	if(args < 1 || args > 3)
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <size=4> <element=0>", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}
 	
 	int entity = INVALID_ENT_REFERENCE;
 	if((entity = HasSelectedEntity(client)) == INVALID_ENT_REFERENCE)
@@ -1691,12 +1852,9 @@ public Action Command_EntGetProp(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Select an entity with \x04sm_ent_select", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
-	
-	char prop[65], szSize[65], szElement[65];
-	GetCmdArg(1, prop, sizeof(prop));
-	
+
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
 	
@@ -1705,9 +1863,6 @@ public Action Command_EntGetProp(int client, int args)
 	
 	PropFieldType sendFieldType = PropField_Unsupported;
 	PropFieldType dataFieldType = PropField_Unsupported;
-
-	Format(szSize, sizeof(szSize), "%d", 4);
-	Format(szElement, sizeof(szElement), "%d", 0);
 
 	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
@@ -1726,7 +1881,7 @@ public Action Command_EntGetProp(int client, int args)
 		char message[256];
 		Format(message, sizeof(message), "%s Could not find prop '\x04%s\x09'", EU_PREFIX, prop);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}
 
 	if(send)
@@ -1735,56 +1890,18 @@ public Action Command_EntGetProp(int client, int args)
 		{
 			case PropField_Integer:
 			{
-				if(args < 1 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <size=4> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-				int size = StringToInt(szSize);
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "SEND - %s", prop);
 				PrintInt(client, string, GetEntProp(entity, Prop_Send, prop, size, element), replySource);
 			}
 			case PropField_Float:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-				
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "SEND - %s", prop);
 				PrintFloat(client, string, GetEntPropFloat(entity, Prop_Send, prop, element), replySource);
 			}
 			case PropField_String:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				char value[PLATFORM_MAX_PATH];
 				GetEntPropString(entity, Prop_Send, prop, value, sizeof(value), element);
@@ -1793,18 +1910,6 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_String_T:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				char value[PLATFORM_MAX_PATH];
 				GetEntPropString(entity, Prop_Send, prop, value, sizeof(value), element);
@@ -1813,18 +1918,6 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_Vector:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-			
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				float value[3];
 				GetEntPropVector(entity, Prop_Send, prop, value, element);
@@ -1833,18 +1926,6 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_Entity:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "SEND - %s", prop);
 				PrintInt(client, string, GetEntPropEnt(entity, Prop_Send, prop, element), replySource);
@@ -1857,56 +1938,18 @@ public Action Command_EntGetProp(int client, int args)
 		{
 			case PropField_Integer:
 			{
-				if(args < 1 || args > 3)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <size=4> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szSize, sizeof(szSize));
-				if(args > 2) GetCmdArg(3, szElement, sizeof(szElement));
-
-				int size = StringToInt(szSize);
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "DATA - %s", prop);
 				PrintInt(client, string, GetEntProp(entity, Prop_Data, prop, size, element), replySource);
 			}
 			case PropField_Float:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-			
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "DATA - %s", prop);
 				PrintFloat(client, string, GetEntPropFloat(entity, Prop_Data, prop, element), replySource);
 			}
 			case PropField_String:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				char value[PLATFORM_MAX_PATH];
 				GetEntPropString(entity, Prop_Data, prop, value, sizeof(value), element);
@@ -1915,18 +1958,6 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_String_T:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				char value[PLATFORM_MAX_PATH];
 				GetEntPropString(entity, Prop_Data, prop, value, sizeof(value), element);
@@ -1935,18 +1966,6 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_Vector:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				float value[3];
 				GetEntPropVector(entity, Prop_Data, prop, value, element);
@@ -1955,32 +1974,17 @@ public Action Command_EntGetProp(int client, int args)
 			}
 			case PropField_Entity:
 			{
-				if(args < 1 || args > 2)
-				{
-					char message[256];
-					Format(message, sizeof(message), "%s Usage \x04sm_ent_getprop <property> <element=0>", EU_PREFIX);
-					ReplyToCommandColor(client, message, replySource);
-					return Plugin_Handled;
-				}
-				
-				if(args > 1) GetCmdArg(2, szElement, sizeof(szElement));
-			
-				int element = StringToInt(szElement);
-				
 				char string[256];
 				Format(string, sizeof(string), "DATA - %s", prop);
 				PrintInt(client, string, GetEntPropEnt(entity, Prop_Data, prop, element), replySource);
 			}
 		}
 	}
-	
-	return Plugin_Handled;
+	return;
 }
 
-public Action Command_KillAll(int client, int args)
+stock void CMDKillAll(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int count = 0;
 	int unownedCount = 0;
 	for (int i = 0; i <= MaxClients; i++)
@@ -2025,13 +2029,10 @@ public Action Command_KillAll(int client, int args)
 		Format(message, sizeof(message), "%s Total: \x04%d\x09", EU_PREFIX, unownedCount + count);
 		ReplyToCommandColor(client, message, replySource);
 	}
-	return Plugin_Handled;
 }
 
-public Action Command_KillMy(int client, int args)
+stock void CMDKillMy(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int count = 0;
 	for (int i = 0; i < g_hEntities[client].Length; i++)
 	{
@@ -2057,14 +2058,10 @@ public Action Command_KillMy(int client, int args)
 		Format(message, sizeof(message), "%s Removed \x04%d\x09 entities", EU_PREFIX, count);
 		ReplyToCommandColor(client, message, replySource);
 	}
-	return Plugin_Handled;
 }
 
-
-public Action Command_KillUnowned(int client, int args)
+stock void CMDKillUnowned(int client, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-	
 	int count = 0;
 	for (int i = 0; i < g_hUnownedEntities.Length; i++)
 	{
@@ -2090,80 +2087,114 @@ public Action Command_KillUnowned(int client, int args)
 		Format(message, sizeof(message), "%s Removed \x04%d\x09 entities", EU_PREFIX, count);
 		ReplyToCommandColor(client, message, replySource);
 	}
-	return Plugin_Handled;
 }
 
-public Action Command_EntCount(int client, int args)
+stock void CMDEntCount(int client, const char[] targetClassName, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-		
 	if(args != 1)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_count <classname>", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}	
 	
 	int count = 0;
-	char arg[65];
-	GetCmdArg(1, arg, sizeof(arg));
-		
+	
 	int iEnt = INVALID_ENT_REFERENCE;
-	while((iEnt = FindEntityByClassname(iEnt, arg)) != -1)
+	while((iEnt = FindEntityByClassname(iEnt, targetClassName)) != -1)
 	{
 		if(iEnt < 0 || !IsValidEntity(iEnt))
 			continue;
 			
 		char classname[65];
 		GetEntityClassname(iEnt, classname, sizeof(classname));
-		if(StrEqual(classname, arg, false))
+		if(StrEqual(classname, targetClassName, false))
 			count++;
 	}
 	
 	char message[256];
-	Format(message, sizeof(message), "%s Found \x04%d\x09 entities with class name '\x04%s\x09'", EU_PREFIX, count, arg);
+	Format(message, sizeof(message), "%s Found \x04%d\x09 entities with class name '\x04%s\x09'", EU_PREFIX, count, targetClassName);
 	ReplyToCommandColor(client, message, replySource);
-	return Plugin_Handled;
 }
 
-public Action Command_EntList(int client, int args)
+stock void CMDEntList(int client, const char[] szTarget, int args, ReplySource replySource)
 {
-	ReplySource replySource = GetCmdReplySource();
-		
 	if(args != 1)
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_list <#userid|client>", EU_PREFIX);
 		ReplyToCommandColor(client, message, replySource);
-		return Plugin_Handled;
+		return;
 	}	
 	
-	char arg[65];
-	GetCmdArg(1, arg, sizeof(arg));
-
-	int target = FindTarget(client, arg, true, true);
+	int target = FindTarget(client, szTarget, true, true);
 	if(!IsValidClient(target))
 	{
-		ReplyToTargetError(client, target);
-		return Plugin_Handled;
+		char message[256];
+		Format(message, sizeof(message), "%s Invalid target", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
 	}
 	
 	PrintClientEntities(client, target, replySource);
-
-	return Plugin_Handled;
 }
 
-// OTHER
-public bool TraceFilterNotSelf(int entityhit, int mask, any entity)
+/**********/
+/* STOCKS */
+/**********/
+stock void GetClientAuthIdEx(int client, AuthIdType type, char[] buff, int size)
 {
-	if(entity == 0 && entityhit != entity)
-		return true;
-	
-	return false;
+	if(IsValidClient(client))
+		GetClientAuthId(client, type, buff, size);
+	else if(client == 0)
+		Format(buff, size, "server");
 }
 
-// STOCKS
+stock int GetStringCount(const char[][] strings, int length)
+{
+	int count = 0;
+	for (int i = 0; i < length; i++)
+	{
+		if(!StrEqual(strings[i], "", false))
+			count++;
+	}
+	return count;
+}
+
+stock int FindWatchedProperty(int client, const char[] prop, int size = 4, int element = 0)
+{
+	for (int i = 0; i < g_hWatchedPropStrings[client].Length / 3; i++)
+	{
+		char watchedProp[PLATFORM_MAX_PATH];
+		g_hWatchedPropStrings[client].GetString(i * 3, watchedProp, sizeof(watchedProp));
+		if(	StrEqual(prop, watchedProp, false) && 
+			size == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_SIZE) && 
+			element == g_hWatchedProps[client].Get(i * (ENTITY_MAX - 1) + ENTITY_ELEMENT))
+		{
+			// Found watched prop
+			return i;
+		}
+	}
+	return EU_INVALID_PROP_INDEX;
+}
+
+// Returns entity index
+stock int GetWatchedProp(int client, int arrIndex, char[] propBuffer, int propBufferSize, bool& propSend, bool& propData, PropFieldType& propType, int& size, int& element, ReplySource& replySource)
+{
+	char prop[PLATFORM_MAX_PATH];
+	g_hWatchedPropStrings[client].GetString(arrIndex*3, prop, sizeof(prop));
+	
+	Format(propBuffer, propBufferSize, prop);
+	propSend = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1));
+	propData = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROP_DATA);
+	propType = view_as<PropFieldType>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PROPERTY_TYPE));
+	size = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_SIZE);
+	element = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_ELEMENT);
+	replySource = view_as<ReplySource>(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REPLY_SOURCE));
+	return EntRefToEntIndex(g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_REFERENCE));
+}
+
 /*
 enum PropType
 {
@@ -2399,7 +2430,216 @@ stock void PrintSelectedEntity(int client, ReplySource replySource)
 
 }
 
-// FORWARDS
+/************/
+/* FORWARDS */
+/************/
+
+public void OnGameFrame()
+{
+	for (int client = 0; client <= MaxClients; client++)
+	{
+		for (int arrIndex = 0; arrIndex < (g_hWatchedPropStrings[client].Length / 3); arrIndex++)
+		{
+			char prop[PLATFORM_MAX_PATH];
+			bool send = false;
+			bool data = false;
+			PropFieldType propType = PropField_Unsupported;
+			int size = 4;
+			int element = 0;
+			ReplySource replySource = SM_REPLY_TO_CHAT;
+			
+			int entity = GetWatchedProp(client, arrIndex, prop, sizeof(prop), send, data, propType, size, element, replySource);
+			if(!IsValidEntity(entity))
+			{
+				for (int j = ENTITY_MAX - 2; j >= 0; j--)
+					g_hWatchedProps[client].Erase(arrIndex * (ENTITY_MAX - 1) + j);
+					
+				g_hWatchedPropStrings[client].Erase(arrIndex+2);
+				g_hWatchedPropStrings[client].Erase(arrIndex+1);
+				g_hWatchedPropStrings[client].Erase(arrIndex);
+				continue;
+			}
+			
+			if(send)
+			{
+				switch(propType)
+				{
+					case PropField_Integer:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						int newValue = GetEntProp(entity, Prop_Send, prop, size, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+					case PropField_Float:
+					{
+						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						float newValue = GetEntPropFloat(entity, Prop_Send, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+					case PropField_String:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
+							
+						}
+					}
+					case PropField_String_T:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 1, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Send, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 1, newValue);
+							
+						}
+					}
+					case PropField_Vector:
+					{
+						float prevValue[3], newValue[3];
+						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, prevValue, sizeof(prevValue));
+						GetEntPropVector(entity, Prop_Send, prop, newValue, element);
+						if(	prevValue[0] != newValue[0] ||
+							prevValue[1] != newValue[1] ||
+							prevValue[2] != newValue[2])
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
+							ReplyToCommandColor(client, message, replySource);
+							Format(message, sizeof(message), "%s [\x03SEND\x09] [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
+							ReplyToCommandColor(client, message, replySource);
+							
+							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue, sizeof(newValue));
+						}
+					}
+					case PropField_Entity:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE);
+						int newValue = GetEntPropEnt(entity, Prop_Send, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03SEND\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_SEND_VALUE, newValue);
+						}
+					}
+				}
+			}
+			if(data)
+			{
+				switch(propType)
+				{
+					case PropField_Integer:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						int newValue = GetEntProp(entity, Prop_Data, prop, size, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+					case PropField_Float:
+					{
+						float prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						float newValue = GetEntPropFloat(entity, Prop_Data, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%f\x09 to \x0C%f\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+					case PropField_String:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
+						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
+							
+						}
+					}
+					case PropField_String_T:
+					{
+						char prevValue[PLATFORM_MAX_PATH], newValue[PLATFORM_MAX_PATH];
+						g_hWatchedPropStrings[client].GetString(arrIndex * 3 + 2, prevValue, sizeof(prevValue));
+
+						GetEntPropString(entity, Prop_Data, prop, newValue, sizeof(newValue), element);
+						if(!StrEqual(prevValue, newValue, true))
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%s\x09 to \x0C%s\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedPropStrings[client].SetString(arrIndex * 3 + 2, newValue);
+						}
+					}
+					case PropField_Vector:
+					{
+						float prevValue[3], newValue[3];
+						g_hWatchedProps[client].GetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, prevValue, sizeof(prevValue));
+						GetEntPropVector(entity, Prop_Data, prop, newValue, element);
+						if(	prevValue[0] != newValue[0] ||
+							prevValue[1] != newValue[1] ||
+							prevValue[2] != newValue[2])
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from:", EU_PREFIX, prop);
+							ReplyToCommandColor(client, message, replySource);
+							Format(message, sizeof(message), "%s [ \x07%.2f \x04%.2f \x0C%.2f\x09 ] to [ \x07%.2f \x04%.2f \x0C%.2f\x09 ]", EU_PREFIX, prevValue[0], prevValue[1], prevValue[2], newValue[0], newValue[1], newValue[2]);
+							ReplyToCommandColor(client, message, replySource);
+							
+							g_hWatchedProps[client].SetArray(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue, sizeof(newValue));
+						}
+					}
+					case PropField_Entity:
+					{
+						int prevValue = g_hWatchedProps[client].Get(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE);
+						int newValue = GetEntPropEnt(entity, Prop_Data, prop, element);
+						if(prevValue != newValue)
+						{
+							char message[256];
+							Format(message, sizeof(message), "%s [\x03DATA\x09] \x04%s\x09 has changed from \x0C%d\x09 to \x0C%d\x09", EU_PREFIX, prop, prevValue, newValue);
+							ReplyToCommandColor(client, message, replySource);
+							g_hWatchedProps[client].Set(arrIndex * (ENTITY_MAX - 1) + ENTITY_PREVIOUS_DATA_VALUE, newValue);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 public void OnClientDisconnect(int client)
 {
 	if(g_DestroyEntsOnDisconnect.BoolValue)
