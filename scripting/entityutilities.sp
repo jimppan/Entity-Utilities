@@ -1529,6 +1529,7 @@ stock void CMDEntScriptSave(int client, const char[] name, int args, ReplySource
 	char message[256];
 	Format(message, sizeof(message), "%s Script '\x04%s\x09' saved!", EU_PREFIX, name);
 	g_bRecording[client] = false;
+	g_hRecordedScript[client].Clear();
 	ReplyToCommandColor(client, message, replySource);
 }
 
