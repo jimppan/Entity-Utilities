@@ -60,7 +60,7 @@
 #define EU_CONFIG_FILE "entityutilities.cfg"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.16"
+#define PLUGIN_VERSION "1.17"
 
 #include <sourcemod>
 #include <sdktools>
@@ -101,7 +101,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.16",
+	name = "Entity Utilities v1.17",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -1508,6 +1508,14 @@ stock void CMDEntScriptReload(int client, int args, ReplySource replySource)
 
 stock void CMDEntScriptRecord(int client, int args, ReplySource replySource)
 {
+	if(g_bRecording[client])
+	{
+		g_bRecording[client] = false;
+		char message[256];
+		Format(message, sizeof(message), "%s Commands are no longer being recorded!", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+		return;
+	}		
 	g_bRecording[client] = true;
 	char message[256];
 	Format(message, sizeof(message), "%s Commands are now being recorded!", EU_PREFIX);
