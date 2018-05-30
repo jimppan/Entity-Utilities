@@ -44,7 +44,6 @@
 #define EU_CMD_LIST				"sm_ent_list"
 #define EU_CMD_COUNT 			"sm_ent_count"
 
-#define EU_MAX_ENT 64
 #define EU_PROP_INVALID -1
 #define EU_PROP_SEND 0
 #define EU_PROP_DATA 1
@@ -60,7 +59,7 @@
 #define EU_CONFIG_FILE "entityutilities.cfg"
 
 #define PLUGIN_AUTHOR "Rachnus"
-#define PLUGIN_VERSION "1.17"
+#define PLUGIN_VERSION "1.18"
 
 #include <sourcemod>
 #include <sdktools>
@@ -101,7 +100,7 @@ char g_szVariantString[PLATFORM_MAX_PATH];
 
 public Plugin myinfo = 
 {
-	name = "Entity Utilities v1.17",
+	name = "Entity Utilities v1.18",
 	author = PLUGIN_AUTHOR,
 	description = "Create/Edit/View entities",
 	version = PLUGIN_VERSION,
@@ -810,7 +809,7 @@ public Action Command_EntSetProp(int client, int args)
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
 	
-	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+	if(FindSendPropInfo(className, prop, sendFieldType) > EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 		
 	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
@@ -1026,11 +1025,19 @@ public Action Command_EntList(int client, int args)
 /*********/
 public bool TraceFilterNotSelf(int entityhit, int mask, any entity)
 {
-	if(entity == 0 && entityhit != entity)
+	if(entity > 0 && entityhit != entity)
 		return true;
 	
 	return false;
 }
+/*
+public bool TraceFilterNotSelf(int entityhit, int mask, any entity)
+{
+	if(entity == 0 && entityhit != entity)
+		return true;
+	
+	return false;
+}*/
 
 /******************/
 /* STOCK COMMANDS */
@@ -1042,14 +1049,6 @@ stock void CMDEntCreate(int client, const char[] classname, int args, ReplySourc
 	{
 		char message[256];
 		Format(message, sizeof(message), "%s Usage \x04sm_ent_create <classname>", EU_PREFIX);
-		ReplyToCommandColor(client, message, replySource);
-		return;
-	}
-	
-	if(g_hEntities[client].Length >= EU_MAX_ENT)
-	{
-		char message[256];
-		Format(message, sizeof(message), "%s Exceeded max entity limit per player (\x04%d\x09)", EU_PREFIX, EU_MAX_ENT);
 		ReplyToCommandColor(client, message, replySource);
 		return;
 	}
@@ -1261,6 +1260,13 @@ stock void CMDEntInput(int client, const char[] input, int activator, int caller
 	
 	if(!StrEqual(g_szVariantString, EU_INVALID_VARIANT, false))
 		SetVariantString(g_szVariantString);
+		
+	if(StrEqual(input, "kill", false) && (IsValidClient(entity) || entity == 0))
+	{
+		char message[256];
+		Format(message, sizeof(message), "%s Do not use input Kill on a player or world!", EU_PREFIX);
+		ReplyToCommandColor(client, message, replySource);
+	}
 		
 	AcceptEntityInput(entity, input, activator, caller, outputid);
 	
@@ -1917,7 +1923,7 @@ stock void CMDEntWatch(int client, const char[] prop, int size, int element, int
 	char classname[65];
 	GetEntityClassname(entity, classname, sizeof(classname));
 	
-	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+	if(FindSendPropInfo(classname, prop, sendFieldType) > EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		data = true;
@@ -2083,7 +2089,7 @@ stock void CMDEntUnwatch(int client, const char[] prop, int size, int element, i
 	char classname[65];
 	GetEntityClassname(entity, classname, sizeof(classname));
 	
-	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+	if(FindSendPropInfo(classname, prop, sendFieldType) > EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		data = true;
@@ -2202,7 +2208,7 @@ stock void CMDEntSetProp(int client, const char[] prop, const char[] szValue1, c
 	char className[PLATFORM_MAX_PATH];
 	GetEntityClassname(entity, className, sizeof(className));
 	
-	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+	if(FindSendPropInfo(className, prop, sendFieldType) > EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 		
 	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
@@ -2386,7 +2392,7 @@ stock void CMDEntGetProp(int client, const char[] prop, int size, int element, i
 	PropFieldType sendFieldType = PropField_Unsupported;
 	PropFieldType dataFieldType = PropField_Unsupported;
 
-	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
+	if(FindSendPropInfo(className, prop, sendFieldType) > EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 		
 	if(FindDataMapInfo(entity, prop, dataFieldType) != EU_INVALID_PROP_DATA_OFFSET)
