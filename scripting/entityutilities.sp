@@ -808,8 +808,8 @@ public Action Command_EntSetProp(int client, int args)
 	PropFieldType finalFieldType = PropField_Unsupported;
 	
 	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
-	
+	GetEntityNetClass(entity, className, sizeof(className));
+
 	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
 		
@@ -1915,7 +1915,7 @@ stock void CMDEntWatch(int client, const char[] prop, int size, int element, int
 	bool data = false;
 
 	char classname[65];
-	GetEntityClassname(entity, classname, sizeof(classname));
+	GetEntityNetClass(entity, classname, sizeof(classname));
 	
 	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
@@ -2081,7 +2081,7 @@ stock void CMDEntUnwatch(int client, const char[] prop, int size, int element, i
 	bool data = false;
 	
 	char classname[65];
-	GetEntityClassname(entity, classname, sizeof(classname));
+	GetEntityNetClass(entity, classname, sizeof(classname));
 	
 	if(FindSendPropInfo(classname, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
@@ -2200,7 +2200,7 @@ stock void CMDEntSetProp(int client, const char[] prop, const char[] szValue1, c
 	PropFieldType dataFieldType = PropField_Unsupported;
 	
 	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
+	GetEntityNetClass(entity, className, sizeof(className));
 	
 	if(FindSendPropInfo(className, prop, sendFieldType) != EU_INVALID_PROP_SEND_OFFSET)
 		send = true;
@@ -2378,7 +2378,7 @@ stock void CMDEntGetProp(int client, const char[] prop, int size, int element, i
 	}
 
 	char className[PLATFORM_MAX_PATH];
-	GetEntityClassname(entity, className, sizeof(className));
+	GetEntityNetClass(entity, className, sizeof(className));
 	
 	bool send = false;
 	bool data = false;
